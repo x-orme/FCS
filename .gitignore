@@ -1,0 +1,18 @@
+# Build artifacts
+Debug/
+Release/
+bin/
+obj/
+
+# IDE settings
+.settings/
+.mxproject
+*.launch
+
+# Temporary files
+*.tmp
+*.bak
+
+# Project files
+.project
+.cproject

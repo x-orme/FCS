@@ -29,7 +29,9 @@
 #include <string.h>
 #include <ssd1306.h>
 #include <ssd1306_fonts.h>
-
+#include "bmp280.h"
+#include "ui.h"    // Added UI Module
+#include "input.h" // Added Input Module
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,7 +52,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+FCS_System_t fcs; // System Global Instance
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,17 +98,20 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  ssd1306_Init(); // OLED 초기화
-  ssd1306_Fill(0); // 화면 지우기 (Black)
-
-  ssd1306_SetCursor(15, 10); // 위치 지정
-  ssd1306_WriteString("Hello FCS", Font_11x18, White); // [명령 하달: Hello FCS]
-
-  ssd1306_SetCursor(18, 40);
-  ssd1306_WriteString("SYSTEM ONLINE", Font_7x10, White);
-
-  ssd1306_UpdateScreen(); // 실제 화면에 출력
+  // 1. OLED Init
+  HAL_Delay(100); 
+  ssd1306_Init(); 
+  ssd1306_Fill(0); 
+  
+  // 2. BMP280 Init
+  HAL_Delay(100);
+  BMP280_Init(); // Fail check is handled in UI display
+  
+  // 3. UI System Init
+  UI_Init(&fcs);
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,24 +121,30 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  char msg[64];
-	  HAL_StatusTypeDef result;
-	  uint8_t i;
-
-	  HAL_UART_Transmit(&huart2, (uint8_t*)"---- I2C Scanner Start ----\r\n", 29, 100);
-
-	  // I2C 장치에 응답이 있는지 확인 (주소 탐색)
-	  for (i=1; i<128; i++)
-	  {
-		  result = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i<<1), 3, 5);
-		  if (result == HAL_OK)
-		  {
-			  sprintf(msg, "Device Found at 0x%02X\r\n", i);
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+	  // [1] Read Inputs (ADC)
+	  // Rank1(PA0), Rank2(PA1), Rank3(PA4), Rank4(PB0=Button)
+	  uint32_t adc_val[4] = {0};
+	  for(int i=0; i<4; i++) {
+		  HAL_ADC_Start(&hadc1);
+		  if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+			  adc_val[i] = HAL_ADC_GetValue(&hadc1);
 		  }
 	  }
-	  HAL_UART_Transmit(&huart2, (uint8_t*)"---- Scan Finished ----\r\n\r\n", 27, 100);
-	  HAL_Delay(5000); // 5초마다 반복 스캔
+	  HAL_ADC_Stop(&hadc1);
+	  
+	  // Convert ADC to Key Event
+	  KeyState key = Input_Scan(adc_val[3]);
+
+	  // [2] Read Sensor Data & Store to System Struct
+	  BMP280_Read_All(&fcs.sensor);
+
+	  // [3] Update & Draw UI
+	  // Pass all inputs: Key state + 3 Knob values (X, Y, Z for Mask, Charge, Rounds)
+	  UI_Update(&fcs, key, adc_val); 
+	  UI_Draw(&fcs);
+
+	  // [4] Loop Delay (Control Refresh Rate)
+	  HAL_Delay(100); // 10Hz Update
   }
   /* USER CODE END 3 */
 }

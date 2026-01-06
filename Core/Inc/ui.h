@@ -18,46 +18,43 @@ typedef enum {
 } UI_State;
 
 // 시스템 전역 데이터 구조체
+// 좌표계 구조체 (UTM System)
 typedef struct {
-    // 1. 센서 데이터
+    uint8_t zone;       // 51 ~ 52
+    char band;          // 'S' or 'T'
+    double easting;     // M (Meter)
+    double northing;    // M (Meter)
+    float altitude;     // M (Meter)
+} UTM_Coord_t;
+
+// 사격 제원 구조체
+typedef struct {
+    float azimuth;      // mil
+    float elevation;    // mil
+    float distance_km;  // km
+    uint8_t charge;     // 장약 호수
+    uint8_t rounds;     // 발사 탄수
+} Fire_Data_t;
+
+// [Deleted Env_Data_t]
+
+// 통합 시스템 구조체
+typedef struct {
+    UI_State state;
+    
+    // Coordinates
+    UTM_Coord_t user_pos; // Battery Position
+    UTM_Coord_t tgt_pos;  // Target Position
+    uint16_t mask_angle;  // mil
+    
+    // Calculation Result
+    Fire_Data_t fire;
+    
+    // Environment
     BMP280_Data_t sensor;
     
-    // 2. 좌표 데이터 (UTM 52S 기준)
-    struct {
-        // [BP: Battery Position]
-        uint32_t bp_easting;   // 6자리 (ex: 123456)
-        uint32_t bp_northing;  // 8자리 (ex: 12345678)
-        uint16_t mask_angle;   // 차폐각 (0~800 mil)
-        
-        // [TGT: Target Position]
-        uint32_t tgt_easting;
-        uint32_t tgt_northing;
-        uint16_t tgt_altitude;
-        
-        // [CORR: Correction]
-        int16_t corr_easting;  // 편의 수정량 (L/R) -> 미터 단위 변환 저장 필요하지만 일단 mil단위 관리도 고려
-        int16_t corr_range;    // 사거리 수정량 (+/-)
-    } coord;
-
-    // 3. 사격 제원 (Fire Solution)
-    struct {
-        // Inputs
-        uint8_t charge;      // 장약 (1~7)
-        uint8_t rounds;      // 발사탄수 (1~10)
-        
-        // Outputs (Calculated)
-        uint16_t azimuth;    // 방위각 (mil)
-        uint16_t elevation;  // 사각 (mil)
-        float    tof;        // 비행시간 (sec)
-        float    distance_km; // 표적 거리
-    } fire;
-    
-    // 4. UI 상태 관리
-    UI_State state;
-    uint8_t  cursor_pos;     // 입력 필드 커서 (0=Easting, 1=Northing, 2=OK)
-    uint8_t  sub_step;       // 단계별 내부 상태
-    uint32_t last_input_time; // 입력 타임아웃 관리용
-    
+    // UI Control
+    uint8_t cursor_pos; // Current Cursor
 } FCS_System_t;
 
 // 함수 원형

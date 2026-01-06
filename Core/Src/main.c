@@ -144,7 +144,7 @@ int main(void)
 	  UI_Draw(&fcs);
 
 	  // [4] Loop Delay (Control Refresh Rate)
-	  HAL_Delay(100); // 10Hz Update
+	  HAL_Delay(20); // 50Hz Update (High Responsiveness)
   }
   /* USER CODE END 3 */
 }

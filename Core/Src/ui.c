@@ -16,8 +16,8 @@ void UI_Init(FCS_System_t *sys) {
     // 기본값 설정 (Korea Default: Zone 52S)
     sys->user_pos.zone = 52;
     sys->user_pos.band = 'S';
-    sys->user_pos.easting = 321000.0;
-    sys->user_pos.northing = 4150000.0;
+    sys->user_pos.easting = 333712.0;
+    sys->user_pos.northing = 4132894.0;
     sys->user_pos.altitude = 100.0f;
     
     // 사격 제원 기본값
@@ -62,6 +62,13 @@ void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]) {
     // Knob 3: 발사탄수 (1 ~ 10)
     sys->fire.rounds = (uint8_t)((knobs[2] * 10) / 4096) + 1;
     if(sys->fire.rounds > 10) sys->fire.rounds = 10;
+
+    // [Real-time Recalculation]
+    // If we are in the Fire Data screen, update calculations immediately 
+    // when knobs (Charge) are turned.
+    if (sys->state == UI_FIRE_DATA) {
+        FCS_Calculate_FireData(sys);
+    }
 
     // 2. 단계별 버튼 처리 (One-Shot Edge Detection + De-bounce Cooldown)
     // 키가 눌려있고, 이전 상태와 다를 때만 실행 (Hold 방지)
@@ -250,8 +257,8 @@ void UI_Draw(FCS_System_t *sys) {
             
             // Env Data
             sprintf(buf, "T:%d.%d  P:%d", 
-                (int)sys->sensor.temperature, (int)(sys->sensor.temperature * 10)%10, 
-                (int)sys->sensor.pressure);
+                (int)sys->env.air_temp, (int)(sys->env.air_temp * 10)%10, 
+                (int)sys->env.air_pressure);
             ssd1306_SetCursor(10, 25);
             ssd1306_WriteString(buf, Font_7x10, White);
             
@@ -302,7 +309,16 @@ void UI_Draw(FCS_System_t *sys) {
             
             ssd1306_Line(10, 42, 118, 42, White);
             
-            if (sys->fire.elevation < sys->mask_angle) {
+            if (sys->fire.elevation < -0.5f) {
+                // Error Handling
+                ssd1306_SetCursor(18, 48);
+                if (sys->fire.elevation > -1.5f) { // -1.0 (RANGE)
+                    ssd1306_WriteString("! RANGE ERR !", Font_7x10, White);
+                } else { // -2.0 (CHARGE)
+                    ssd1306_WriteString("! CHG ERROR !", Font_7x10, White); 
+                }
+            }
+            else if (sys->fire.elevation < sys->mask_angle) {
                 ssd1306_SetCursor(22, 48);
                 ssd1306_WriteString("!MASK ERROR!", Font_7x10, White); 
             } else {

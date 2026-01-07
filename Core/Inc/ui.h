@@ -50,9 +50,16 @@ typedef struct {
     // Calculation Result
     Fire_Data_t fire;
     
-    // Environment
-    BMP280_Data_t sensor;
-    
+    // Environment & Correction Factors
+    struct {
+        float air_temp;     // C (from BMP280)
+        float air_pressure; // hPa (from BMP280)
+        float wind_speed;   // m/s
+        float wind_dir;     // mil (Grid North)
+        float prop_temp;    // C (Propellant Temperature)
+        float weight_diff;  // projectile weight kg diff (placeholder)
+    } env;
+
     // UI Control
     uint8_t cursor_pos; // Current Cursor
 } FCS_System_t;

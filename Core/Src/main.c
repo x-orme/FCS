@@ -136,7 +136,10 @@ int main(void)
 	  KeyState key = Input_Scan(adc_val[3]);
 
 	  // [2] Read Sensor Data & Store to System Struct
-	  BMP280_Read_All(&fcs.sensor);
+	  BMP280_Data_t bmp_tmp;
+	  BMP280_Read_All(&bmp_tmp);
+	  fcs.env.air_temp = bmp_tmp.temperature;
+	  fcs.env.air_pressure = bmp_tmp.pressure;
 
 	  // [3] Update & Draw UI
 	  // Pass all inputs: Key state + 3 Knob values (X, Y, Z for Mask, Charge, Rounds)

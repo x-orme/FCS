@@ -62,6 +62,12 @@ typedef struct {
 
     // UI Control
     uint8_t cursor_pos; // Current Cursor
+    // 수정 사격 (Adjustment)
+    struct {
+        int16_t range_m;  // 거리 수정 (+User Input)
+        int16_t az_mil;   // 방위각 편차 (+R/-L)
+    } adj;
+    
 } FCS_System_t;
 
 // 함수 원형

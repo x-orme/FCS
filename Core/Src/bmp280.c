@@ -7,6 +7,7 @@ static uint16_t dig_T1;
 static int16_t  dig_T2, dig_T3;
 static uint16_t dig_P1;
 static int16_t  dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+static float    BMP280_Ref_Pressure = 1013.25f; // Standard Atmosphere Default
 
 // Internal helper functions
 static void BMP280_ReadShim(uint8_t reg, uint8_t *data, uint8_t len) {
@@ -115,8 +116,14 @@ void BMP280_Read_All(BMP280_Data_t *data) {
 
     // Altitude Calculation (h = 44330 * (1 - (P/P0)^(1/5.255)))
     if (data->pressure > 0) {
-        data->altitude = 44330.0f * (1.0f - powf(data->pressure / 1013.25f, 0.1903f));
+        data->altitude = 44330.0f * (1.0f - powf(data->pressure / BMP280_Ref_Pressure, 0.1903f));
     } else {
         data->altitude = 0.0f;
+    }
+}
+
+void BMP280_SetQNH(float qnh_hpa) {
+    if (qnh_hpa > 800.0f && qnh_hpa < 1200.0f) {
+        BMP280_Ref_Pressure = qnh_hpa;
     }
 }

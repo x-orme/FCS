@@ -99,7 +99,7 @@ static float L_Interp(float x1, float y1, float x2, float y2, float x) {
 }
 
 // =========================================================================================
-// [2] UTM to Lat/Lon Conversion (WGS84)
+// [2] UTM to Lat/Lon Conversion (WGS84)`
 // =========================================================================================
 void FCS_UTM_To_LatLon(UTM_Coord_t *utm, double *lat, double *lon) {
     double e = sqrt(1 - (WGS84_B * WGS84_B) / (WGS84_A * WGS84_A));
@@ -240,7 +240,9 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
     // float wind_eff = 0.0f; 
     
     // (Simplification: Just applying to Corrected Range var)
-    float final_lookup_range = map_dist_m + corr_dist_m;
+    // [Adjustment Applied Here]
+    // Add user adjustment (range_m) to the calculated Map Range
+    float final_lookup_range = map_dist_m + corr_dist_m + (float)sys->adj.range_m;
     
     // Clamp Range
     if (final_lookup_range < 0) final_lookup_range = 100.0f;
@@ -360,7 +362,17 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
     // --- Step 5: Final Data Assembly ---
     sys->fire.distance_km = (float)(map_dist_m / 1000.0); // Display Map Range or Corrected? Usually Map is useful reference.
     sys->fire.elevation = base_elev + site_corr;
-    sys->fire.azimuth = map_az_mil + drift + cor_az_correction; // + Crosswind Correction (Skipped: No Wind Data)
+    
+    // [Adjustment Applied Here] 
+    // Logic: Gun_Correction = Observed_Deviation * (OT_Dist/1000) / (GT_Dist/1000)
+    // Assumption: OT_Dist = 1000m -> OT_Factor = 1.0
+    // Equation: Gun_Correction = Input_Mil / GT_Factor
+    float gt_factor = sys->fire.distance_km; // GT Distance in km
+    if (gt_factor < 0.1f) gt_factor = 0.1f; // Div by Zero Protection
+    
+    float correction_mil = (float)sys->adj.az_mil / gt_factor;
+
+    sys->fire.azimuth = map_az_mil + drift + cor_az_correction + correction_mil; 
     // sys->fire.charge is already set above
     // sys->fire.rounds is managed by UI Knob inputs, do not overwrite here.
 

@@ -32,5 +32,6 @@ typedef struct {
 /* Functions */
 uint8_t BMP280_Init(void);
 void BMP280_Read_All(BMP280_Data_t *data);
+void BMP280_SetQNH(float qnh_hpa);
 
 #endif /* __BMP280_H */

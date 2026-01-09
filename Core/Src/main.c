@@ -107,7 +107,8 @@ int main(void)
   
   // 2. BMP280 Init
   HAL_Delay(100);
-  BMP280_Init(); // Fail check is handled in UI display
+  uint8_t bmp_res = BMP280_Init();
+  printf("\r\n[SYSTEM] BMP280 Init Result: %s\r\n", bmp_res == 0 ? "OK" : "FAIL (Check Wiring)");
   
   // 3. UI System Init
   UI_Init(&fcs);
@@ -145,6 +146,31 @@ int main(void)
 	  // Pass all inputs: Key state + 3 Knob values (X, Y, Z for Mask, Charge, Rounds)
 	  UI_Update(&fcs, key, adc_val); 
 	  UI_Draw(&fcs);
+
+	  // [Testing] Output to Terminal (Every 500ms)
+	  static uint32_t last_test_log = 0;
+	  if (HAL_GetTick() - last_test_log > 500) {
+	      last_test_log = HAL_GetTick();
+	      
+	      // [Safe Print] Reverting to Integer casting as %f is not working (if needed)
+	      // T: 24.50 -> 24 . 50
+	      int t_int = (int)bmp_tmp.temperature;
+	      int t_dec = (int)((bmp_tmp.temperature - t_int) * 100);
+	      if(t_dec < 0) t_dec = -t_dec; 
+	      
+	      int p_int = (int)bmp_tmp.pressure;
+	      int p_dec = (int)((bmp_tmp.pressure - p_int) * 100);
+	      
+	      // VT100 Clear Line + Print (Altitude Removed)
+	      printf("\r\033[K[SENSOR] T:%d.%02d C | P:%d.%02d hPa", 
+	          t_int, t_dec, p_int, p_dec);
+
+          // If calibration failed or pressure is weird, warn
+          if (bmp_tmp.raw_pressure >= 0x80000 || bmp_tmp.pressure < 900) {
+              printf(" <BAD SENSOR?>");
+          }
+          fflush(stdout);
+	  }
 
 	  // [4] Loop Delay (Control Refresh Rate)
 	  HAL_Delay(20); // 50Hz Update (High Responsiveness)
@@ -199,7 +225,12 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+// [UART Redirect] printf to USART2 (ST-Link Virtual COM Port)
+int _write(int file, char *ptr, int len) {
+    // Timeout extended to 1000ms to ensure full transmission
+    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, 1000);
+    return len;
+}
 /* USER CODE END 4 */
 
 /**

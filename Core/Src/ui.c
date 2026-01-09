@@ -10,199 +10,199 @@
 
 // [초기화]
 void UI_Init(FCS_System_t *sys) {
-    memset(sys, 0, sizeof(FCS_System_t));
+  memset(sys, 0, sizeof(FCS_System_t));
     
-    sys->state = UI_BOOT;
+  sys->state = UI_BOOT;
     
-    // 기본값 설정 (Korea Default: Zone 52S)
-    sys->user_pos.zone = 52;
-    sys->user_pos.band = 'S';
-    sys->user_pos.easting = 333712.0;
-    sys->user_pos.northing = 4132894.0;
-    sys->user_pos.altitude = 100.0f;
+  // 기본값 설정 (Korea Default: Zone 52S)
+  sys->user_pos.zone = 52;
+  sys->user_pos.band = 'S';
+  sys->user_pos.easting = 333712.0;
+  sys->user_pos.northing = 4132894.0;
+  sys->user_pos.altitude = 100.0f;
     
-    // 사격 제원 기본값
-    sys->fire.charge = 1;
-    sys->fire.rounds = 1;
+  // 사격 제원 기본값
+  sys->fire.charge = 1;
+  sys->fire.rounds = 1;
     
-    // 수정 사격 초기화
-    sys->adj.range_m = 0;
-    sys->adj.az_mil = 0;
+  // 수정 사격 초기화
+  sys->adj.range_m = 0;
+  sys->adj.az_mil = 0;
     
-    // 초기화 메시지
-    ssd1306_Fill(0);
-    ssd1306_SetCursor(20, 20); // Center Aligned
-    ssd1306_WriteString("SYSTEM INIT...", Font_7x10, White);
-    ssd1306_UpdateScreen();
-    HAL_Delay(1000);
+  // 초기화 메시지
+  ssd1306_Fill(0);
+  ssd1306_SetCursor(20, 20); // Center Aligned
+  ssd1306_WriteString("SYSTEM INIT...", Font_7x10, White);
+  ssd1306_UpdateScreen();
+  HAL_Delay(1000);
     
-    // 바로 1단계 진입
-    sys->state = UI_BP_SETTING;
-    sys->cursor_pos = 0; 
+  // 바로 1단계 진입
+  sys->state = UI_BP_SETTING;
+  sys->cursor_pos = 0; 
 }
 
 // [입력 처리]
 void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]) {
     
-    static KeyState last_key = KEY_NONE;
+  static KeyState last_key = KEY_NONE;
 
-    // 1. 노브 데이터 처리
-    
-    // Knob 2: 장약 (1 ~ 7) - Global available? Usually set in Fire Data, but let's keep it global or restricted?
-    // Let's keep continuous update for now as it was.
-    sys->fire.charge = (uint8_t)((knobs[1] * 7) / 4096) + 1;
-    if(sys->fire.charge > 7) sys->fire.charge = 7;
+  // 1. 노브 데이터 처리
+  
+  // Knob 2: 장약 (1 ~ 7) - Global available? Usually set in Fire Data, but let's keep it global or restricted?
+  // Let's keep continuous update for now as it was.
+  sys->fire.charge = (uint8_t)((knobs[1] * 7) / 4096) + 1;
+  if(sys->fire.charge > 7) sys->fire.charge = 7;
 
-    // Knob 3: 발사탄수 (1 ~ 10)
-    sys->fire.rounds = (uint8_t)((knobs[2] * 10) / 4096) + 1;
-    if(sys->fire.rounds > 10) sys->fire.rounds = 10;
+  // Knob 3: 발사탄수 (1 ~ 10)
+  sys->fire.rounds = (uint8_t)((knobs[2] * 10) / 4096) + 1;
+  if(sys->fire.rounds > 10) sys->fire.rounds = 10;
 
-    // Knob 1: 차폐각 (Moved to WAITING state only)
-    if (sys->state == UI_WAITING) {
-        static uint32_t smooth_knob0 = 0;
-        if (smooth_knob0 == 0) smooth_knob0 = knobs[0]; 
-        smooth_knob0 = (smooth_knob0 * 3 + knobs[0]) / 4;
-        
-        uint16_t temp_angle = (uint16_t)(((smooth_knob0 * 81) / 4096) * 10);
-        if (temp_angle > 800) temp_angle = 800;
-        sys->mask_angle = temp_angle;
-    }
+  // Knob 1: 차폐각 (Moved to WAITING state only)
+  if (sys->state == UI_WAITING) {
+    static uint32_t smooth_knob0 = 0;
+    if (smooth_knob0 == 0) smooth_knob0 = knobs[0]; 
+    smooth_knob0 = (smooth_knob0 * 3 + knobs[0]) / 4;
+      
+    uint16_t temp_angle = (uint16_t)(((smooth_knob0 * 81) / 4096) * 10);
+    if (temp_angle > 800) temp_angle = 800;
+    sys->mask_angle = temp_angle;
+  }
 
-    // [Real-time Recalculation]
-    if (sys->state == UI_FIRE_DATA) {
-        FCS_Calculate_FireData(sys);
-    }
+  // [Real-time Recalculation]
+  if (sys->state == UI_FIRE_DATA) {
+    FCS_Calculate_FireData(sys);
+  }
 
-    // 2. 단계별 버튼 처리
-    static uint32_t last_act_time = 0;
-    
-    if (key != KEY_NONE && key != last_key) {
-        if (HAL_GetTick() - last_act_time > 200) {
-            last_act_time = HAL_GetTick(); 
+  // 2. 단계별 버튼 처리
+  static uint32_t last_act_time = 0;
+  
+  if (key != KEY_NONE && key != last_key) {
+    if (HAL_GetTick() - last_act_time > 200) {
+      last_act_time = HAL_GetTick(); 
 
-            // Helper for Digit Modifiers
-            static const double pow10[] = { 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0 };
-            double mod_val = 1.0;
+      // Helper for Digit Modifiers
+      static const double pow10[] = { 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0 };
+      double mod_val = 1.0;
 
-            // Target Pointer
-            UTM_Coord_t *curr_coord = (sys->state == UI_BP_SETTING) ? &sys->user_pos : &sys->tgt_pos;
-            
-            // Cursor Range Logic
-            // BP_SETTING & TARGET_LOCK: 0-1 (Zone/Band), 2-7 (E), 8-14 (N), 15-18 (Alt)
-            int max_cursor = 18; // Both allow Altitude Edit
+      // Target Pointer
+      UTM_Coord_t *curr_coord = (sys->state == UI_BP_SETTING) ? &sys->user_pos : &sys->tgt_pos;
+      
+      // Cursor Range Logic
+      // BP_SETTING & TARGET_LOCK: 0-1 (Zone/Band), 2-7 (E), 8-14 (N), 15-18 (Alt)
+      int max_cursor = 18; // Both allow Altitude Edit
 
-            // Calculate Mod Val based on cursor position
-            if (sys->cursor_pos >= 2 && sys->cursor_pos <= 7) {
-                mod_val = pow10[7 - sys->cursor_pos];
-            } else if (sys->cursor_pos >= 8 && sys->cursor_pos <= 14) {
-                mod_val = pow10[14 - sys->cursor_pos];
-            } else if (sys->cursor_pos >= 15 && sys->cursor_pos <= 18) {
-                mod_val = pow10[18 - sys->cursor_pos]; 
+      // Calculate Mod Val based on cursor position
+      if (sys->cursor_pos >= 2 && sys->cursor_pos <= 7) {
+        mod_val = pow10[7 - sys->cursor_pos];
+      } else if (sys->cursor_pos >= 8 && sys->cursor_pos <= 14) {
+        mod_val = pow10[14 - sys->cursor_pos];
+      } else if (sys->cursor_pos >= 15 && sys->cursor_pos <= 18) {
+        mod_val = pow10[18 - sys->cursor_pos]; 
             }
             
-            switch (sys->state) {
-                case UI_BP_SETTING:
-                case UI_TARGET_LOCK:
-                    // [좌우] 커서 이동
-                    if (key == KEY_RIGHT) {
-                        sys->cursor_pos++;
-                        if (sys->cursor_pos > max_cursor) sys->cursor_pos = 0;
-                    } else if (key == KEY_LEFT) {
-                        if (sys->cursor_pos > 0) sys->cursor_pos--;
-                        else sys->cursor_pos = max_cursor;
-                    }
-                    
-                    // [상하] 값 변경
-                    if (key == KEY_UP || key == KEY_DOWN) {
-                        int dir = (key == KEY_UP) ? 1 : -1;
-                        
-                        if (sys->cursor_pos == 0) { // Zone
-                             if (curr_coord->zone == 51) curr_coord->zone = 52;
-                             else curr_coord->zone = 51;
-                        }
-                        else if (sys->cursor_pos == 1) { // Band
-                             if (curr_coord->band == 'S') curr_coord->band = 'T';
-                             else curr_coord->band = 'S';
-                        }
-                        else if (sys->cursor_pos <= 14) { // Easting / Northing
-                            double *target_val_ptr = (sys->cursor_pos <= 7) ? &curr_coord->easting : &curr_coord->northing;
-                            uint32_t val_int = (uint32_t)(*target_val_ptr);
-                            uint32_t multiplier = (uint32_t)mod_val;
-                            int current_digit = (val_int / multiplier) % 10;
-                            int new_digit = (current_digit + dir + 10) % 10;
-                            val_int = val_int - (current_digit * multiplier) + (new_digit * multiplier);
-                            *target_val_ptr = (double)val_int;
-                        } 
-                        else if (sys->cursor_pos >= 15) { // Altitude (Common logic)
-                             int alt_int = (int)curr_coord->altitude;
-                             int multiplier = (int)mod_val;
-                             int current_digit = (alt_int / multiplier) % 10;
-                             int new_digit = (current_digit + dir + 10) % 10;
-                             alt_int = alt_int - (current_digit * multiplier) + (new_digit * multiplier);
-                             curr_coord->altitude = (float)alt_int;
-                        }
-                    }
-                    
-                    // [State Transition]
-                    if (sys->state == UI_BP_SETTING) {
-                        if (key == KEY_ENTER) {
-                            Flash_Save_BatteryPos(sys); // Auto-Save to Flash
-                            sys->state = UI_WAITING;
-                        }
-                    } else { // UI_TARGET_LOCK
-                        if (key == KEY_LEFT) sys->state = UI_WAITING;
-                        else if (key == KEY_ENTER) {
-                           FCS_Calculate_FireData(sys);
-                           sys->state = UI_FIRE_DATA;
-                        }
-                    }
-                    break;
-    
-                case UI_WAITING:
-                    if (key == KEY_LEFT) {
-                        sys->state = UI_BP_SETTING;
-                        sys->cursor_pos = 0;
-                    }
-                     else if (key == KEY_ENTER) {
-                         // Reset Target Pos to Zero (Safe by default)
-                         sys->tgt_pos.zone = 52;
-                         sys->tgt_pos.band = 'S';
-                         sys->tgt_pos.easting = 0.0;
-                         sys->tgt_pos.northing = 0.0;
-                         sys->tgt_pos.altitude = 0.0f;
-                         
-                         sys->state = UI_TARGET_LOCK;
-                        sys->cursor_pos = 0;
-                    }
-                    break;
-    
-                case UI_FIRE_DATA:
-                    if (key == KEY_LEFT) sys->state = UI_WAITING;
-                    else if (key == KEY_ENTER) sys->state = UI_ADJUSTMENT;
-                    break;
-                    
-                case UI_ADJUSTMENT:
-                    // [상하] 사거리 수정 (+/- 100m)
-                    if (key == KEY_UP) sys->adj.range_m += 100;
-                    else if (key == KEY_DOWN) sys->adj.range_m -= 100;
-                    
-                    // [좌우] 편각 수정 (L/R +/- 10mil)
-                    // Note: Usually Right is +, Left is - (Standard Correction)
-                    if (key == KEY_RIGHT) sys->adj.az_mil += 10;
-                    else if (key == KEY_LEFT) sys->adj.az_mil -= 10;
-                    
-                    // 확인(Enter) 누르면 재계산 후 사격 제원(Fire Order) 복귀
-                    if (key == KEY_ENTER) {
-                        FCS_Calculate_FireData(sys);
-                        sys->state = UI_FIRE_DATA;
-                    }
-                    break;
-
-                default: break;
-            }
+    switch (sys->state) {
+      case UI_BP_SETTING:
+      case UI_TARGET_LOCK:
+        // [좌우] 커서 이동
+        if (key == KEY_RIGHT) {
+          sys->cursor_pos++;
+          if (sys->cursor_pos > max_cursor) sys->cursor_pos = 0;
+        } else if (key == KEY_LEFT) {
+          if (sys->cursor_pos > 0) sys->cursor_pos--;
+          else sys->cursor_pos = max_cursor;
         }
+            
+        // [상하] 값 변경
+        if (key == KEY_UP || key == KEY_DOWN) {
+          int dir = (key == KEY_UP) ? 1 : -1;
+               
+          if (sys->cursor_pos == 0) { // Zone
+            if (curr_coord->zone == 51) curr_coord->zone = 52;
+            else curr_coord->zone = 51;
+          }
+          else if (sys->cursor_pos == 1) { // Band
+            if (curr_coord->band == 'S') curr_coord->band = 'T';
+            else curr_coord->band = 'S';
+          }
+          else if (sys->cursor_pos <= 14) { // Easting / Northing
+            double *target_val_ptr = (sys->cursor_pos <= 7) ? &curr_coord->easting : &curr_coord->northing;
+            uint32_t val_int = (uint32_t)(*target_val_ptr);
+            uint32_t multiplier = (uint32_t)mod_val;
+            int current_digit = (val_int / multiplier) % 10;
+            int new_digit = (current_digit + dir + 10) % 10;
+            val_int = val_int - (current_digit * multiplier) + (new_digit * multiplier);
+            *target_val_ptr = (double)val_int;
+          } 
+          else if (sys->cursor_pos >= 15) { // Altitude (Common logic)
+            int alt_int = (int)curr_coord->altitude;
+            int multiplier = (int)mod_val;
+            int current_digit = (alt_int / multiplier) % 10;
+            int new_digit = (current_digit + dir + 10) % 10;
+            alt_int = alt_int - (current_digit * multiplier) + (new_digit * multiplier);
+            curr_coord->altitude = (float)alt_int;
+          }
+        }
+            
+        // [State Transition]
+        if (sys->state == UI_BP_SETTING) {
+          if (key == KEY_ENTER) {
+            Flash_Save_BatteryPos(sys); // Auto-Save to Flash
+            sys->state = UI_WAITING;
+          }
+        } else { // UI_TARGET_LOCK
+          if (key == KEY_LEFT) sys->state = UI_WAITING;
+          else if (key == KEY_ENTER) {
+            FCS_Calculate_FireData(sys);
+            sys->state = UI_FIRE_DATA;
+          }
+        }
+        break;
+
+      case UI_WAITING:
+        if (key == KEY_LEFT) {
+          sys->state = UI_BP_SETTING;
+          sys->cursor_pos = 0;
+        }
+        else if (key == KEY_ENTER) {
+          // Reset Target Pos to Zero (Safe by default)
+          sys->tgt_pos.zone = 52;
+          sys->tgt_pos.band = 'S';
+          sys->tgt_pos.easting = 0.0;
+          sys->tgt_pos.northing = 0.0;
+          sys->tgt_pos.altitude = 0.0f;
+             
+          sys->state = UI_TARGET_LOCK;
+          sys->cursor_pos = 0;
+        }
+        break;
+
+      case UI_FIRE_DATA:
+        if (key == KEY_LEFT) sys->state = UI_WAITING;
+        else if (key == KEY_ENTER) sys->state = UI_ADJUSTMENT;
+        break;
+            
+      case UI_ADJUSTMENT:
+        // [상하] 사거리 수정 (+/- 100m)
+        if (key == KEY_UP) sys->adj.range_m += 100;
+        else if (key == KEY_DOWN) sys->adj.range_m -= 100;
+             
+        // [좌우] 편각 수정 (L/R +/- 10mil)
+        // Note: Usually Right is +, Left is - (Standard Correction)
+        if (key == KEY_RIGHT) sys->adj.az_mil += 10;
+        else if (key == KEY_LEFT) sys->adj.az_mil -= 10;
+            
+        // 확인(Enter) 누르면 재계산 후 사격 제원(Fire Order) 복귀
+        if (key == KEY_ENTER) {
+          FCS_Calculate_FireData(sys);
+          sys->state = UI_FIRE_DATA;
+        }
+        break;
+
+      default: break;
     }
-    last_key = key;
+  }
+}
+  last_key = key;
 }
 
 // [화면 그리기]

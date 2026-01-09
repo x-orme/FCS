@@ -1,7 +1,7 @@
 #ifndef FCS_MATH_H
 #define FCS_MATH_H
 
-#include "ui.h" // For UTM_Coord_t
+#include "fcs_common.h" // For UTM_Coord_t, FCS_System_t
 
 // WGS84 Constants
 #define WGS84_A         6378137.0

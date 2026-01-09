@@ -22,11 +22,11 @@
 
 /* Structure to hold sensor data */
 typedef struct {
-    float temperature;
-    float pressure;
-    float altitude; // Calculated altitude
-    int32_t raw_pressure; // Debug: Raw ADC value
-    int32_t raw_temperature; // Debug: Raw ADC value
+  float temperature;
+  float pressure;
+  float altitude; // Calculated altitude
+  int32_t raw_pressure; // Debug: Raw ADC value
+  int32_t raw_temperature; // Debug: Raw ADC value
 } BMP280_Data_t;
 
 /* Functions */

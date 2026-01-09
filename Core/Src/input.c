@@ -8,12 +8,12 @@
   */
 // [Input Scan] - With Dead Zones (Safety)
 KeyState Input_Scan(uint32_t adc_value) {
-    if (adc_value > 3800) return KEY_NONE;
-    if (adc_value < 200)  return KEY_LEFT;
-    if (adc_value > 400  && adc_value < 900)  return KEY_UP;
-    if (adc_value > 1100 && adc_value < 1600) return KEY_DOWN;
-    if (adc_value > 1800 && adc_value < 2300) return KEY_RIGHT;
-    if (adc_value > 2700 && adc_value < 3200) return KEY_ENTER;
+  if (adc_value > 3800) return KEY_NONE;
+  if (adc_value < 200)  return KEY_LEFT;
+  if (adc_value > 400  && adc_value < 900)  return KEY_UP;
+  if (adc_value > 1100 && adc_value < 1600) return KEY_DOWN;
+  if (adc_value > 1800 && adc_value < 2300) return KEY_RIGHT;
+  if (adc_value > 2700 && adc_value < 3200) return KEY_ENTER;
     
-    return KEY_NONE;
+  return KEY_NONE;
 }

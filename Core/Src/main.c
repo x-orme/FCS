@@ -54,6 +54,22 @@
 
 /* USER CODE BEGIN PV */
 FCS_System_t fcs; // System Global Instance
+
+#include "fcs_core.h" // Command Parser
+// [UART Rx Buffer] (Line Buffer for Parsing)
+#define RX_BUFF_SIZE 64
+char rx_buffer[RX_BUFF_SIZE];
+uint8_t rx_indx = 0;
+
+// [UART Ring Buffer] (Raw Data Queue)
+#define RING_SIZE 128
+uint8_t u_buf[RING_SIZE];
+volatile uint8_t u_head = 0;
+volatile uint8_t u_tail = 0;
+uint8_t rx_byte; // Temp holder for ISR
+
+// External handles needed for callback
+extern UART_HandleTypeDef huart2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -64,7 +80,21 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+// [UART Rx Callback] - Interrupt Handler (Minimal Latency)
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART2) { // PC Connection
+    // 1. Enqueue Data to Ring Buffer
+    uint8_t next_head = (u_head + 1) % RING_SIZE;
+    if (next_head != u_tail) { // Check Full
+        u_buf[u_head] = rx_byte;
+        u_head = next_head;
+    }
+    // (If full, drop data - better than locking system)
+    
+    // 2. Re-arm Interrupt Immediately
+    HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -117,6 +147,11 @@ int main(void)
   // [Flash] Load Saved Battery Position (or set defaults)
   Flash_Load_BatteryPos(&fcs);
   
+  // [UART] Start Reception Interrupt (USART2 for PC)
+  HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  
+  printf("\r\n[FCS] System Ready. Waiting for Commands...\r\n");
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -126,58 +161,95 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // [1] Read Inputs (ADC)
-	  // Rank1(PA0), Rank2(PA1), Rank3(PA4), Rank4(PB0=Button)
-	  uint32_t adc_val[4] = {0};
-	  for(int i=0; i<4; i++) {
-		  HAL_ADC_Start(&hadc1);
-		  if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
-			  adc_val[i] = HAL_ADC_GetValue(&hadc1);
-		  }
-	  }
-	  HAL_ADC_Stop(&hadc1);
-	  
-	  // Convert ADC to Key Event
-	  KeyState key = Input_Scan(adc_val[3]);
+    // [1] Read Inputs (ADC)
+    // Rank1(PA0), Rank2(PA1), Rank3(PA4), Rank4(PB0=Button)
+    uint32_t adc_val[4] = {0};
+    for(int i=0; i<4; i++) {
+      HAL_ADC_Start(&hadc1);
+      if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+        adc_val[i] = HAL_ADC_GetValue(&hadc1);
+      }
+    }
+    HAL_ADC_Stop(&hadc1);
 
-	  // [2] Read Sensor Data & Store to System Struct
-	  BMP280_Data_t bmp_tmp;
-	  BMP280_Read_All(&bmp_tmp);
-	  fcs.env.air_temp = bmp_tmp.temperature;
-	  fcs.env.air_pressure = bmp_tmp.pressure;
+    // Convert ADC to Key Event
+    KeyState key = Input_Scan(adc_val[3]);
 
-	  // [3] Update & Draw UI
-	  // Pass all inputs: Key state + 3 Knob values (X, Y, Z for Mask, Charge, Rounds)
-	  UI_Update(&fcs, key, adc_val); 
-	  UI_Draw(&fcs);
+    // [2] Read Sensor Data & Store to System Struct
+    BMP280_Data_t bmp_tmp;
+    BMP280_Read_All(&bmp_tmp);
+    fcs.env.air_temp = bmp_tmp.temperature;
+    fcs.env.air_pressure = bmp_tmp.pressure;
 
-	  // [Testing] Output to Terminal (Every 500ms)
-	  static uint32_t last_test_log = 0;
-	  if (HAL_GetTick() - last_test_log > 500) {
-	      last_test_log = HAL_GetTick();
-	      
-	      // [Safe Print] Reverting to Integer casting as %f is not working (if needed)
-	      // T: 24.50 -> 24 . 50
-	      int t_int = (int)bmp_tmp.temperature;
-	      int t_dec = (int)((bmp_tmp.temperature - t_int) * 100);
-	      if(t_dec < 0) t_dec = -t_dec; 
-	      
-	      int p_int = (int)bmp_tmp.pressure;
-	      int p_dec = (int)((bmp_tmp.pressure - p_int) * 100);
-	      
-	      // VT100 Clear Line + Print (Altitude Removed)
-	      printf("\r\033[K[SENSOR] T:%d.%02d C | P:%d.%02d hPa", 
-	          t_int, t_dec, p_int, p_dec);
+    // [3] Update & Draw UI
+    // Pass all inputs: Key state + 3 Knob values (X, Y, Z for Mask, Charge, Rounds)
+    UI_Update(&fcs, key, adc_val); 
+    UI_Draw(&fcs);
 
-          // If calibration failed or pressure is weird, warn
-          if (bmp_tmp.raw_pressure >= 0x80000 || bmp_tmp.pressure < 900) {
-              printf(" <BAD SENSOR?>");
-          }
-          fflush(stdout);
-	  }
+    /*
+    // [Testing] Output to Terminal (Every 500ms) - Disabled for CMD Input
+    static uint32_t last_test_log = 0;
+    if (HAL_GetTick() - last_test_log > 500) {
+      last_test_log = HAL_GetTick();
 
-	  // [4] Loop Delay (Control Refresh Rate)
-	  HAL_Delay(20); // 50Hz Update (High Responsiveness)
+      // [Safe Print] Reverting to Integer casting as %f is not working (if needed)
+      int t_int = (int)bmp_tmp.temperature;
+      int t_dec = (int)((bmp_tmp.temperature - t_int) * 100);
+      if(t_dec < 0) t_dec = -t_dec; 
+      
+      int p_int = (int)bmp_tmp.pressure;
+      int p_dec = (int)((bmp_tmp.pressure - p_int) * 100);
+      
+      // VT100 Clear Line + Print (Altitude Removed)
+      printf("\r\033[K[SENSOR] T:%d.%02d C | P:%d.%02d hPa", 
+          t_int, t_dec, p_int, p_dec);
+
+      // If calibration failed or pressure is weird, warn
+      if (bmp_tmp.raw_pressure >= 0x80000 || bmp_tmp.pressure < 900) {
+        printf(" <BAD SENSOR?>");
+      }
+      fflush(stdout);
+    }
+    */
+
+    // [5] Serial Command Check (Ring Buffer Consumer)
+    while (u_head != u_tail) {
+        // Dequeue
+        uint8_t ch = u_buf[u_tail];
+        u_tail = (u_tail + 1) % RING_SIZE;
+        
+        // 1. Echo Back (Safe to block here in Main Loop)
+        if (ch == '\r') {
+             uint8_t nl[] = "\r\n";
+             HAL_UART_Transmit(&huart2, nl, 2, 10);
+        } else {
+             HAL_UART_Transmit(&huart2, &ch, 1, 10);
+        }
+
+        // 2. Build Line Buffer
+        if (ch == '\n' || ch == '\r') {
+             rx_buffer[rx_indx] = 0; // Null terminate
+             if (rx_indx > 0) {
+                 char resp[64];
+                 if (FCS_Process_Command(&fcs, rx_buffer, resp) > 0) {
+                     printf("\r\n[CMD] %s\r\n", resp); 
+                 } else {
+                     printf("\r\n[CMD] Ignored/Error: %s\r\n", rx_buffer);
+                 }
+                 // Reset State
+                 rx_indx = 0;
+             }
+        } else {
+             if (rx_indx < RX_BUFF_SIZE - 1) {
+                 rx_buffer[rx_indx++] = ch;
+             } else {
+                 rx_indx = 0; // Overflow / Ignore
+             }
+        }
+    }
+
+    // [4] Loop Delay (Control Refresh Rate) (Original Line)
+    HAL_Delay(20); // 50Hz Update (High Responsiveness)
   }
   /* USER CODE END 3 */
 }

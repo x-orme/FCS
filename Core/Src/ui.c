@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "fcs_math.h" // Added Math Module
+#include "flash_ops.h" // Added Flash Logic
 #include <stdio.h>
 #include <string.h>
 #include <math.h> 
@@ -145,6 +146,7 @@ void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]) {
                     // [State Transition]
                     if (sys->state == UI_BP_SETTING) {
                         if (key == KEY_ENTER) {
+                            Flash_Save_BatteryPos(sys); // Auto-Save to Flash
                             sys->state = UI_WAITING;
                         }
                     } else { // UI_TARGET_LOCK
@@ -161,14 +163,15 @@ void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]) {
                         sys->state = UI_BP_SETTING;
                         sys->cursor_pos = 0;
                     }
-                    else if (key == KEY_ENTER) {
-                        // Inherit Pos for Target
-                        if (sys->tgt_pos.easting < 1.0) {
-                            sys->tgt_pos = sys->user_pos;
-                            sys->tgt_pos.easting += 500; 
-                            sys->tgt_pos.northing += 1000;
-                        }
-                        sys->state = UI_TARGET_LOCK;
+                     else if (key == KEY_ENTER) {
+                         // Reset Target Pos to Zero (Safe by default)
+                         sys->tgt_pos.zone = 52;
+                         sys->tgt_pos.band = 'S';
+                         sys->tgt_pos.easting = 0.0;
+                         sys->tgt_pos.northing = 0.0;
+                         sys->tgt_pos.altitude = 0.0f;
+                         
+                         sys->state = UI_TARGET_LOCK;
                         sys->cursor_pos = 0;
                     }
                     break;
@@ -225,7 +228,7 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_SetCursor(0, 16);
             ssd1306_WriteString(buf, Font_7x10, White);
 
-            sprintf(buf, "    N:%07lu", (uint32_t)sys->user_pos.northing);
+            sprintf(buf, "    N:0%07lu", (uint32_t)sys->user_pos.northing);
             ssd1306_SetCursor(0, 28);
             ssd1306_WriteString(buf, Font_7x10, White);
             
@@ -242,7 +245,7 @@ void UI_Draw(FCS_System_t *sys) {
             if (sys->cursor_pos == 0) { cx=0; cw=14; cy=27; }
             else if (sys->cursor_pos == 1) { cx=14; cw=7; cy=27; }
             else if (sys->cursor_pos <= 7) { cx=42+(sys->cursor_pos-2)*7; cw=7; cy=27; }
-            else if (sys->cursor_pos <= 14) { cx=42+(sys->cursor_pos-8)*7; cw=7; cy=39; }
+            else if (sys->cursor_pos <= 14) { cx=42+7+(sys->cursor_pos-8)*7; cw=7; cy=39; } // +7px for '0' prefix
             else { cx=42+(sys->cursor_pos-15)*7; cw=7; cy=51; } // Alt Cursor Y=40+11
             
             ssd1306_Line(cx, cy, cx+cw-1, cy, White);
@@ -276,7 +279,7 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_SetCursor(0, 16);
             ssd1306_WriteString(buf, Font_7x10, White);
 
-            sprintf(buf, "    N:%07lu", (uint32_t)sys->tgt_pos.northing);
+            sprintf(buf, "    N:0%07lu", (uint32_t)sys->tgt_pos.northing);
             ssd1306_SetCursor(0, 28);
             ssd1306_WriteString(buf, Font_7x10, White);
             
@@ -293,7 +296,7 @@ void UI_Draw(FCS_System_t *sys) {
             if (sys->cursor_pos == 0) { cx=0; cw=14; cy=27; }
             else if (sys->cursor_pos == 1) { cx=14; cw=7; cy=27; }
             else if (sys->cursor_pos <= 7) { cx=42+(sys->cursor_pos-2)*7; cw=7; cy=27; }
-            else if (sys->cursor_pos <= 14) { cx=42+(sys->cursor_pos-8)*7; cw=7; cy=39; }
+            else if (sys->cursor_pos <= 14) { cx=42+7+(sys->cursor_pos-8)*7; cw=7; cy=39; } // +7px for '0' prefix
             else { cx=42+(sys->cursor_pos-15)*7; cw=7; cy=51; } // Alt Cursor
             
             ssd1306_Line(cx, cy, cx+cw-1, cy, White);

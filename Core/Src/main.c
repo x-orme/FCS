@@ -32,6 +32,7 @@
 #include "bmp280.h"
 #include "ui.h"    // Added UI Module
 #include "input.h" // Added Input Module
+#include "flash_ops.h" // Added Flash Module
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -112,6 +113,9 @@ int main(void)
   
   // 3. UI System Init
   UI_Init(&fcs);
+  
+  // [Flash] Load Saved Battery Position (or set defaults)
+  Flash_Load_BatteryPos(&fcs);
   
   /* USER CODE END 2 */
 

@@ -18,5 +18,5 @@ obj/
 .cproject
 
 # User Notes & Docs
-Docs/
+# Docs/
 !LICENSE.txt

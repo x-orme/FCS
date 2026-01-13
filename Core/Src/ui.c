@@ -42,26 +42,27 @@ void UI_Init(FCS_System_t *sys) {
 }
 
 // [입력 처리]
-void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]) {
+void UI_Update(FCS_System_t *sys) {
     
   static KeyState last_key = KEY_NONE;
+  KeyState key = sys->input.key_state;
 
   // 1. 노브 데이터 처리
   
   // Knob 2: 장약 (1 ~ 7) - Global available? Usually set in Fire Data, but let's keep it global or restricted?
   // Let's keep continuous update for now as it was.
-  sys->fire.charge = (uint8_t)((knobs[1] * 7) / 4096) + 1;
+  sys->fire.charge = (uint8_t)((sys->input.knob_values[1] * 7) / 4096) + 1;
   if(sys->fire.charge > 7) sys->fire.charge = 7;
 
   // Knob 3: 발사탄수 (1 ~ 10)
-  sys->fire.rounds = (uint8_t)((knobs[2] * 10) / 4096) + 1;
+  sys->fire.rounds = (uint8_t)((sys->input.knob_values[2] * 10) / 4096) + 1;
   if(sys->fire.rounds > 10) sys->fire.rounds = 10;
 
   // Knob 1: 차폐각 (Moved to WAITING state only)
   if (sys->state == UI_WAITING) {
     static uint32_t smooth_knob0 = 0;
-    if (smooth_knob0 == 0) smooth_knob0 = knobs[0]; 
-    smooth_knob0 = (smooth_knob0 * 3 + knobs[0]) / 4;
+    if (smooth_knob0 == 0) smooth_knob0 = sys->input.knob_values[0]; 
+    smooth_knob0 = (smooth_knob0 * 3 + sys->input.knob_values[0]) / 4;
       
     uint16_t temp_angle = (uint16_t)(((smooth_knob0 * 81) / 4096) * 10);
     if (temp_angle > 800) temp_angle = 800;

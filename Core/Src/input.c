@@ -17,3 +17,21 @@ KeyState Input_Scan(uint32_t adc_value) {
     
   return KEY_NONE;
 }
+
+/**
+ * @brief Reads all 4 ADC channels (Rank1, Rank2, Rank3, Button).
+ * @param hadc: Pointer to ADC handle
+ * @param dest: Pointer to array of size 4 to store values
+ */
+void Input_Read_All(ADC_HandleTypeDef *hadc, uint32_t *dest) {
+  for(int i=0; i<4; i++) {
+    HAL_ADC_Start(hadc);
+    if (HAL_ADC_PollForConversion(hadc, 10) == HAL_OK) {
+      dest[i] = HAL_ADC_GetValue(hadc);
+    }
+    // No explicit stop needed between conversions if in Scan/Discontinuous mode, 
+    // but here we are polling single conversions or rank-based.
+    // Assuming Standard Polling Loop from main.c logic.
+  }
+  HAL_ADC_Stop(hadc);
+}

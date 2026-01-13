@@ -13,6 +13,15 @@ typedef enum {
   UI_ADJUSTMENT    // 수정 사격 (추후 구현)
 } UI_State_t;
 
+typedef enum {
+  KEY_NONE = 0,
+  KEY_LEFT,   // ADC < 200 (0V)
+  KEY_UP,     // ADC 600~700
+  KEY_DOWN,   // ADC 1300~1400
+  KEY_RIGHT,  // ADC 2000~2100
+  KEY_ENTER   // ADC 2900~3000
+} KeyState;
+
 // 2. 공용 구조체 (Struct)
 typedef struct {
   int zone;
@@ -47,12 +56,19 @@ typedef struct {
 } EnvData_t;
 
 typedef struct {
+  uint32_t adc_raw[4]; // [0,1,2]=Knobs, [3]=Key
+  KeyState key_state;
+  uint32_t knob_values[3]; // Processed knob values (if needed, or use adc_raw)
+} InputData_t;
+
+typedef struct {
   // Core Data
   UTM_Coord_t user_pos;
   UTM_Coord_t tgt_pos;
   
   FireData_t fire;
   EnvData_t env;
+  InputData_t input; // Added Input State
   
   // System State
   UI_State_t state;

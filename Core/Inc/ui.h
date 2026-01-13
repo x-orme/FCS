@@ -11,7 +11,7 @@
 // 함수 원형
 void UI_Init(FCS_System_t *sys);
 // knobs array size explicit or pointer
-void UI_Update(FCS_System_t *sys, KeyState key, uint32_t knobs[3]); 
+void UI_Update(FCS_System_t *sys); 
 void UI_Draw(FCS_System_t *sys);
 
 #endif /* INC_UI_H_ */

@@ -62,7 +62,7 @@ void SystemClock_Config(void);
 
 // [UART Rx Callback] - Redirect to Core
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART2) { 
+  if (huart->Instance == USART2 || huart->Instance == USART1) { 
     FCS_UART_RxCallback(huart);
   }
 }
@@ -168,7 +168,9 @@ int main(void)
   // I will update fcs_core.h/c quickly after this (or before?).
   // I'll assume it exists for now and implement it next step to avoid context switch in my head?
   // No, I'll invoke it in comments and then add it.
+  // [UART] Start Reception
   FCS_Serial_Start(&huart2); 
+  FCS_Serial_Start(&huart1);
   
   printf("\r\n[FCS] System Ready. Waiting for Commands...\r\n");
   
@@ -190,7 +192,7 @@ int main(void)
     UI_Draw(&fcs);
 
     // [3] Background Tasks
-    FCS_Task_Serial(&fcs, &huart2);
+    FCS_Task_Serial(&fcs, &huart1); // Respond to BT
     
     // [4] Control Loop Rate
     HAL_Delay(20); 

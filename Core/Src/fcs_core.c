@@ -14,16 +14,10 @@ static volatile uint8_t u_head = 0;
 static volatile uint8_t u_tail = 0;
 static uint8_t rx_byte_latched; // Temp holder for ISR
 
-// [Internal State] Line Buffer for Parsing
-#define RX_BUFF_SIZE 64
-static char line_buffer[RX_BUFF_SIZE];
-static uint8_t line_indx = 0;
-
 // [1] 초기화 (Initialization)
 void FCS_Init_System(FCS_System_t *sys) {
   memset(sys, 0, sizeof(FCS_System_t));
   sys->state = UI_BOOT;
-  // Defaults can be set here
 }
 
 void FCS_Set_Battery(FCS_System_t *sys, int zone, char band, double e, double n, float alt) {
@@ -43,13 +37,11 @@ void FCS_Set_Target(FCS_System_t *sys, int zone, char band, double e, double n, 
 }
 
 // [2] Main Update Tasks (Called from main loop)
-
 void FCS_Update_Input(FCS_System_t *sys, ADC_HandleTypeDef *hadc) {
   // 1. Hardware Poll
   Input_Read_All(hadc, sys->input.adc_raw);
   
-  // 2. Process Knobs (Raw to Values) - Simple assignment or mapping
-  // Rank1,2,3 -> Knob 0,1,2
+  // 2. Process Knobs
   sys->input.knob_values[0] = sys->input.adc_raw[0];
   sys->input.knob_values[1] = sys->input.adc_raw[1];
   sys->input.knob_values[2] = sys->input.adc_raw[2];
@@ -61,21 +53,17 @@ void FCS_Update_Input(FCS_System_t *sys, ADC_HandleTypeDef *hadc) {
 void FCS_Update_Sensors(FCS_System_t *sys) {
   BMP280_Data_t bmp_tmp;
   BMP280_Read_All(&bmp_tmp);
-  
   sys->env.air_temp = bmp_tmp.temperature;
   sys->env.air_pressure = bmp_tmp.pressure;
-  // Density calculation could be done here
 }
 
-// [3] Serial/Comm Task
+// [3] Serial/Comm Task Helper
 void FCS_UART_RxCallback(UART_HandleTypeDef *huart) {
-    // 1. Enqueue Data to Ring Buffer
     uint8_t next_head = (u_head + 1) % RING_SIZE;
-    if (next_head != u_tail) { // Check Full
+    if (next_head != u_tail) {
         u_buf[u_head] = rx_byte_latched;
         u_head = next_head;
     }
-    // 2. Re-arm Interrupt
     HAL_UART_Receive_IT(huart, &rx_byte_latched, 1);
 }
 
@@ -83,67 +71,154 @@ void FCS_Serial_Start(UART_HandleTypeDef *huart) {
     HAL_UART_Receive_IT(huart, &rx_byte_latched, 1);
 }
 
+// [Internal State] Parser Machine
+typedef enum {
+  P_IDLE,
+  P_CMD,
+  P_SALT,
+  P_LEN,
+  P_PAYLOAD,
+  P_CRC,
+  P_ETX
+} ParserState_t;
+
+static ParserState_t p_state = P_IDLE;
+static uint8_t p_cmd = 0;
+static uint8_t p_salt = 0;
+static uint8_t p_len = 0;
+static uint8_t p_idx = 0;
+static uint8_t p_payload[128]; // Max Payload
+static uint8_t p_crc_recv = 0;
+
+// Simple CRC8 (Polynomial 0x07)
+static uint8_t Calc_CRC8(uint8_t *data, int len, uint8_t initial) {
+    uint8_t crc = initial;
+    for (int i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 0x80) crc = (crc << 1) ^ 0x07;
+            else crc <<= 1;
+        }
+    }
+    return crc;
+}
+
+// [3] Serial/Comm Task (State Machine Parser)
 void FCS_Task_Serial(FCS_System_t *sys, UART_HandleTypeDef *huart) {
     while (u_head != u_tail) {
-        // Dequeue
-        uint8_t ch = u_buf[u_tail];
+        // Dequeue byte
+        uint8_t rx = u_buf[u_tail];
         u_tail = (u_tail + 1) % RING_SIZE;
         
-        // 1. Echo Back
-        if (ch == '\r') {
-             uint8_t nl[] = "\r\n";
-             HAL_UART_Transmit(huart, nl, 2, 10);
-        } else {
-             HAL_UART_Transmit(huart, &ch, 1, 10);
+        // [DEBUG TEMP] Monitor RX
+        printf("[RX] %02X (State: %d)\r\n", rx, p_state);
+        
+        // Protocol State Machine
+        switch (p_state) {
+            case P_IDLE:
+                if (rx == FCS_PROTO_STX) {
+                    p_state = P_CMD;
+                }
+                break;
+                
+            case P_CMD:
+                p_cmd = rx;
+                p_state = P_SALT;
+                break;
+                
+            case P_SALT:
+                p_salt = rx;
+                p_state = P_LEN;
+                break;
+                
+            case P_LEN:
+                p_len = rx;
+                p_idx = 0;
+                if (p_len > 120) p_state = P_IDLE; // Safety Limit
+                else if (p_len == 0) p_state = P_CRC; // Empty Payload
+                else p_state = P_PAYLOAD;
+                break;
+                
+            case P_PAYLOAD:
+                p_payload[p_idx++] = rx;
+                if (p_idx >= p_len) p_state = P_CRC;
+                break;
+                
+            case P_CRC:
+                p_crc_recv = rx;
+                p_state = P_ETX;
+                break;
+                
+            case P_ETX:
+                if (rx == FCS_PROTO_ETX) {
+                    // 1. Verify CRC
+                    // CRC covers: CMD + SALT + LEN + PAYLOAD
+                    uint8_t header[3] = {p_cmd, p_salt, p_len};
+                    uint8_t cal_crc = Calc_CRC8(header, 3, 0);
+                    cal_crc = Calc_CRC8(p_payload, p_len, cal_crc);
+                    
+                    char tx_buf[128];
+                    
+                    if (cal_crc == p_crc_recv) {
+                        // 2. Decrypt Payload
+                        uint8_t session_key = FCS_PROTO_KEY ^ p_salt;
+                        for(int i=0; i<p_len; i++) {
+                            p_payload[i] ^= (uint8_t)(session_key + i);
+                        }
+                        p_payload[p_len] = 0; // Null Terminate
+                        
+                        // 3. Process Command
+                        char resp[64];
+                        if (p_cmd == FCS_CMD_TARGET_INPUT) {
+                             FCS_Process_Command(sys, (char*)p_payload, resp);
+                        } 
+                        else if (p_cmd == FCS_CMD_STATUS_REQ) {
+                             sprintf(resp, "STATUS:READY,Z%d", sys->user_pos.zone);
+                        }
+                        
+                        // 4. Send Response (Via the connected UART)
+                        sprintf(tx_buf, "\r\n[ACK] %s\r\n", resp);
+                        HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
+                        
+                    } else {
+                        // CRC Error Response
+                        sprintf(tx_buf, "\r\n[ERR] CRC Fail\r\n");
+                        HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
+                    }
+                }
+                p_state = P_IDLE;
+                break;
         }
-
-        // 2. Build Line Buffer
-        if (ch == '\n' || ch == '\r') {
-             line_buffer[line_indx] = 0; // Null terminate
-             if (line_indx > 0) {
-                 char resp[64];
-                 if (FCS_Process_Command(sys, line_buffer, resp) > 0) {
-                     printf("\r\n[CMD] %s\r\n", resp); 
-                 } else {
-                     printf("\r\n[CMD] Ignored/Error: %s\r\n", line_buffer);
-                 }
-                 // Reset State
-                 line_indx = 0;
-             }
-         } else {
-             if (line_indx < RX_BUFF_SIZE - 1) {
-                 line_buffer[line_indx++] = ch;
-             } else {
-                 line_indx = 0; // Overflow / Ignore
-             }
-         }
     }
 }
 
 
-// [4] 명령어 처리기 (Verify & Bluetooth Core)
-// CMD Format: "TGT:52,S,333712,4132894,100"
+// [4] 명령어 처리기 (Logic Core)
+// Now accepts raw payload string: "52,S,333712,4132894,100" (from 0xA1)
+// Or "TGT:..." (legacy, removed in theory but kept logic structure)
 int FCS_Process_Command(FCS_System_t *sys, char *cmd, char *resp) {
   
-  // 1. Target Input Command
-  if (strncmp(cmd, "TGT:", 4) == 0) {
+  // 1. Target Input Command Logics
+  // Check if it's legacy "TGT:" or raw params?
+  // Since this is internal call now, we assume it gets the parameter string directly.
+  
     int z;
     char b;
-    double e, n;
-    float a;
-    
-    // Parse: TGT:52,S,123.0,456.0,100.0
     long e_int, n_int;
     int a_int;
     
-    // Format: TGT:52,S,333712,4132894,105
-    int count = sscanf(cmd + 4, "%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
+    // Try Parsing: "52,S,333712,4132894,105"
+    int count = sscanf(cmd, "%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
+    
+    // If failed, maybe it still has "TGT:" prefix (Testing)?
+    if (count != 5) {
+         count = sscanf(cmd, "TGT:%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
+    }
     
     if (count == 5) {
-      // Cast to Double/Float
-      e = (double)e_int;
-      n = (double)n_int;
-      a = (float)a_int;
+      double e = (double)e_int;
+      double n = (double)n_int;
+      float a = (float)a_int;
       
       // Update System
       FCS_Set_Target(sys, z, b, e, n, a);
@@ -158,22 +233,14 @@ int FCS_Process_Command(FCS_System_t *sys, char *cmd, char *resp) {
       int el_i = (int)sys->fire.elevation;
       int el_d = (int)((sys->fire.elevation - el_i) * 10); if(el_d<0) el_d = -el_d;
       
-      int maz_i = (int)sys->fire.map_azimuth;
-      int maz_d = (int)((sys->fire.map_azimuth - maz_i) * 10); if(maz_d<0) maz_d = -maz_d;
-      
-      sprintf(resp, "OK:AZ%d.%d,EL%d.%d,D%d|MAZ%d.%d,MD%d,VI%d", 
-              az_i, az_d, el_i, el_d, (int)(sys->fire.distance_km * 1000),
-              maz_i, maz_d, (int)sys->fire.map_distance, (int)sys->fire.height_diff);
+      sprintf(resp, "AZ:%d.%d EL:%d.%d", az_i, az_d, el_i, el_d);
       
       // Update UI State Context
       sys->state = UI_FIRE_DATA; 
       
       return 1; // Success
     } else {
-      sprintf(resp, "ERR:ParseFail(%d)", count);
+      sprintf(resp, "ERR:Parse(%d)", count);
       return -1;
     }
-  }
-  
-  return 0; // Unknown Command
 }

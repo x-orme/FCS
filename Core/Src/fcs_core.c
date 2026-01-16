@@ -110,9 +110,6 @@ void FCS_Task_Serial(FCS_System_t *sys, UART_HandleTypeDef *huart) {
         uint8_t rx = u_buf[u_tail];
         u_tail = (u_tail + 1) % RING_SIZE;
         
-        // [DEBUG TEMP] Monitor RX
-        printf("[RX] %02X (State: %d)\r\n", rx, p_state);
-        
         // Protocol State Machine
         switch (p_state) {
             case P_IDLE:

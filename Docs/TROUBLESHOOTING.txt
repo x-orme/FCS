@@ -80,7 +80,27 @@ No.6 | [Compile] 헤더 중복 정의 (Multiple Definition)
 - 이후 `fcs_common.h`로 공용 구조체를 분리하여 의존성 고리를 끊음.
 
 ================================================================================
-No.7 | [IDE] Eclipse IDE의 "Red Error" (False Positive)
+No.6 | [Comm/Bluetooth] Data Link Layer Failure Analysis
 --------------------------------------------------------------------------------
-[문제 Situations]
-- 컴파일은 되는데 에디터에 빨간 줄이 뜸. Indexer 동기화 문제. "Rebuild Index"로 해결.
+[문제 상황]
+- Python Client 앱(`fcs_terminal.py`)에서 보안 패킷을 전송했으나 펌웨어가 응답하지 않음.
+- 앱 로그에는 [TX] 패킷이 정상적으로 로깅되지만, [RX]가 전혀 없는 상태.
+- Bluetooth 모듈(HC-06)의 LED는 'Connected' 상태로 정상 점멸 중.
+
+[가설 및 검증]
+1. 가설 1 (SW/Parser Error): 패킷 파싱 로직에 버그가 있어 데이터를 무시하는가?
+   -> 검증: `fcs_core.c`의 `FCS_Task_Serial` 링버퍼 디큐(Dequeue) 지점에 `printf("[RX] %x")` 디버그 코드 삽입.
+   -> 결과: PC 터미널에 아무런 로그도 찍히지 않음. 즉, 애플리케이션 레이어로 데이터 자체가 올라오지 않음 (Interrupt 미발생).
+
+2. 가설 2 (HW/Settings): 인터럽트 자체가 꺼져 있는가?
+   -> 검증: STM32CubeMX 설정(`.ioc`) 확인.
+   -> 결과: `USART1 global interrupt` 항목이 `Disabled`로 설정되어 있음을 발견. (BaudRate 9600은 정상)
+
+[해결 방안]
+- STM32CubeMX의 NVIC Settings 탭에서 USART1 인터럽트를 `Enabled`로 변경.
+- `main.c`의 초기화 코드에 `FCS_Serial_Start(&huart1)` 추가하여 수신 인터럽트 개방.
+- `fcs_core.c`의 응답 함수를 `printf`(Debug Port)에서 `HAL_UART_Transmit(&huart1)`(BT Port)로 변경하여 응답 경로 수정.
+
+[결과]
+- 수정 후 Python 앱에서 [ACK] 응답 정상 수신 확인. Azimuth/Elevation 데이터 정상 표출.
+================================================================================

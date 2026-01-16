@@ -11,7 +11,7 @@ This document outlines the future development plan for the K105A1 FCS project.
 ## 2. Bluetooth Application & Encryption
 **Goal:** Implement a secure wireless interface using a custom lightweight protocol.
 
-### 2.1 Protocol Specification (Salted Rolling XOR)
+### 2.1 Protocol Specification (Salted Rolling XOR) (DONE)
 - **Structure:** `[STX] [CMD_ID] [SALT] [LEN] [PAYLOAD...] [CRC8] [ETX]`
   - `STX`: 0x02 (Start)
   - `CMD`: Command ID (e.g., 0xA1 for Target Input)
@@ -26,12 +26,13 @@ This document outlines the future development plan for the K105A1 FCS project.
   - **Dynamic Key Generation:** `SessionKey = MasterKey ^ SALT`
   - **Cipher Logic:** `Encrypted[i] = Raw[i] ^ (SessionKey + i)` (Rolling Index)
 
-### 2.2 Tasks
-- [ ] **Mobile App (Concept):** Simple Terminal app that constructs this packet structure.
-- [ ] **STM32 Firmware:**
-  - Update `fcs_core.c` to implement a State Machine Parser (Idle -> Header -> Payload -> Checksum).
-  - Implement the decryption routine using the Salt from the packet.
-  - Verify CRC8 integrity before processing.
+### 2.2 Tasks (Completed)
+- [x] **Mobile App (Concept):** Implemented `fcs_terminal.py` (Modern GUI, Secure Packet Generator).
+- [x] **STM32 Firmware:**
+  - [x] Update `fcs_core.c` to implement a State Machine Parser.
+  - [x] Implement the decryption routine using Salt.
+  - [x] Verify CRC8 integrity before processing.
+  - [x] Response Mechanism: Redirect ACK/ERR to Bluetooth Port (USART1).
 
 ## 3. Security Hardening
 **Goal:** Remove debug artifacts for the final release candidate.

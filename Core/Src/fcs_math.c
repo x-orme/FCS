@@ -24,60 +24,59 @@ typedef struct {
 
 // ... (Table Data Updates - Keeping structure but refining ranges) ...
 
-// --- Charge 1 (Short Range) ---
+// --- Charge 1 (1.0 ~ 3.0 km) ---
 static const FiringTable_Row_t FT_Ch1[] = {
-  {  1000.0f,   75.0f,  0.5f,  6.0f },
-  {  2000.0f,  170.0f,  2.1f,  3.8f },
-  {  3000.0f,  300.0f,  5.2f,  2.8f } // Max 3.0km
+  {  1000.0f,  100.0f,  0.5f,  6.0f },
+  {  2000.0f,  320.0f,  2.1f,  3.8f },
+  {  3000.0f,  800.0f,  5.2f,  2.8f } // Max 3.0km (~800mil)
 };
 #define SZ_Ch1 (sizeof(FT_Ch1)/sizeof(FT_Ch1[0]))
 
-// --- Charge 2 ---
+// --- Charge 2 (1.5 ~ 4.0 km) ---
 static const FiringTable_Row_t FT_Ch2[] = {
-  {  2000.0f,  120.0f,  1.5f,  4.2f },
-  {  3000.0f,  200.0f,  3.2f,  3.0f },
-  {  4000.0f,  310.0f,  5.8f,  2.2f } // Max 4.0km
+  {  1500.0f,  110.0f,  1.0f,  4.5f },
+  {  3000.0f,  400.0f,  3.2f,  3.0f },
+  {  4000.0f,  800.0f,  5.8f,  2.2f } // Max 4.0km
 };
 #define SZ_Ch2 (sizeof(FT_Ch2)/sizeof(FT_Ch2[0]))
 
-// --- Charge 3 ---
+// --- Charge 3 (2.0 ~ 5.5 km) ---
 static const FiringTable_Row_t FT_Ch3[] = {
-  {  2000.0f,   85.0f,  1.2f,  4.8f },
-  {  3500.0f,  180.0f,  3.0f,  3.2f },
-  {  5000.0f,  280.0f,  6.0f,  2.0f } // Max 5.0km
+  {  2000.0f,  120.0f,  1.2f,  4.8f },
+  {  4000.0f,  420.0f,  4.0f,  3.2f },
+  {  5500.0f,  800.0f,  6.0f,  2.0f } // Max 5.5km
 };
 #define SZ_Ch3 (sizeof(FT_Ch3)/sizeof(FT_Ch3[0]))
 
-// --- Charge 4 ---
+// --- Charge 4 (3.0 ~ 7.0 km) ---
 static const FiringTable_Row_t FT_Ch4[] = {
-  {  3000.0f,  115.0f,  2.0f,  3.8f },
-  {  5000.0f,  215.0f,  4.8f,  2.3f },
-  {  7000.0f,  360.0f,  9.5f,  1.8f } // Max 7.0km
+  {  3000.0f,  150.0f,  2.0f,  3.8f },
+  {  5000.0f,  450.0f,  4.8f,  2.3f },
+  {  7000.0f,  800.0f,  9.5f,  1.8f } // Max 7.0km
 };
 #define SZ_Ch4 (sizeof(FT_Ch4)/sizeof(FT_Ch4[0]))
 
-// --- Charge 5 (Main) ---
+// --- Charge 5 (4.0 ~ 8.5 km) ---
 static const FiringTable_Row_t FT_Ch5[] = {
-  {  4000.0f,  130.0f,  2.5f,  3.2f },
-  {  6000.0f,  210.0f,  5.0f,  2.4f },
-  {  8000.0f,  320.0f,  9.0f,  1.7f } // Max 8.0km
+  {  4000.0f,  180.0f,  2.5f,  3.2f },
+  {  6500.0f,  480.0f,  5.0f,  2.4f },
+  {  8500.0f,  800.0f,  9.0f,  1.7f } // Max 8.5km
 };
 #define SZ_Ch5 (sizeof(FT_Ch5)/sizeof(FT_Ch5[0]))
 
-// --- Charge 6 ---
+// --- Charge 6 (5.0 ~ 10.0 km) ---
 static const FiringTable_Row_t FT_Ch6[] = {
-  {  5000.0f,  135.0f,  2.8f,  2.9f },
-  {  7500.0f,  225.0f,  5.8f,  2.0f },
-  { 10000.0f,  350.0f, 11.5f,  1.3f } // Max 10.0km
+  {  5000.0f,  190.0f,  2.8f,  2.9f },
+  {  7500.0f,  510.0f,  5.8f,  2.0f },
+  { 10000.0f,  800.0f, 11.5f,  1.3f } // Max 10.0km
 };
 #define SZ_Ch6 (sizeof(FT_Ch6)/sizeof(FT_Ch6[0]))
 
-// --- Charge 7 (Max) ---
+// --- Charge 7 (6.0 ~ 11.3 km) ---
 static const FiringTable_Row_t FT_Ch7[] = {
-  {  6000.0f,  135.0f,  2.9f,  2.2f },
-  {  8000.0f,  195.0f,  5.2f,  1.7f },
-  { 10000.0f,  270.0f,  8.5f,  1.4f },
-  { 11300.0f,  350.0f, 12.0f,  1.1f } // Max 11.3km
+  {  6000.0f,  195.0f,  2.9f,  2.2f },
+  {  9000.0f,  530.0f,  5.2f,  1.7f },
+  { 11300.0f,  800.0f, 12.0f,  1.1f } // Max 11.3km
 };
 #define SZ_Ch7 (sizeof(FT_Ch7)/sizeof(FT_Ch7[0]))
 // ... (rest of file) ...

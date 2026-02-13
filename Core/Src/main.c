@@ -202,7 +202,14 @@ int main(void)
     // [3] Background Tasks
     FCS_Task_Serial(&fcs, &huart1); // Respond to BT
 
-    // [4] Control Loop Rate (~50Hz, WFI saves power during idle)
+    // [4] LED Heartbeat (~1Hz, toggle every 500ms)
+    static uint32_t led_tick = 0;
+    if (HAL_GetTick() - led_tick >= 500) {
+      led_tick = HAL_GetTick();
+      HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    }
+
+    // [5] Control Loop Rate (~50Hz, WFI saves power during idle)
     while (HAL_GetTick() - tick_start < 20) {
       HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
     }

@@ -92,100 +92,100 @@ static uint8_t p_crc_recv = 0;
 
 // Simple CRC8 (Polynomial 0x07)
 static uint8_t Calc_CRC8(uint8_t *data, int len, uint8_t initial) {
-    uint8_t crc = initial;
-    for (int i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++) {
-            if (crc & 0x80) crc = (crc << 1) ^ 0x07;
-            else crc <<= 1;
-        }
+  uint8_t crc = initial;
+  for (int i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++) {
+      if (crc & 0x80) crc = (crc << 1) ^ 0x07;
+      else crc <<= 1;
     }
-    return crc;
+  }
+  return crc;
 }
 
 // [3] Serial/Comm Task (State Machine Parser)
 void FCS_Task_Serial(FCS_System_t *sys, UART_HandleTypeDef *huart) {
-    while (u_head != u_tail) {
-        // Dequeue byte
-        uint8_t rx = u_buf[u_tail];
-        u_tail = (u_tail + 1) % RING_SIZE;
+  while (u_head != u_tail) {
+    // Dequeue byte
+    uint8_t rx = u_buf[u_tail];
+    u_tail = (u_tail + 1) % RING_SIZE;
         
-        // Protocol State Machine
-        switch (p_state) {
-            case P_IDLE:
-                if (rx == FCS_PROTO_STX) {
-                    p_state = P_CMD;
-                }
-                break;
-                
-            case P_CMD:
-                p_cmd = rx;
-                p_state = P_SALT;
-                break;
-                
-            case P_SALT:
-                p_salt = rx;
-                p_state = P_LEN;
-                break;
-                
-            case P_LEN:
-                p_len = rx;
-                p_idx = 0;
-                if (p_len > 120) p_state = P_IDLE; // Safety Limit
-                else if (p_len == 0) p_state = P_CRC; // Empty Payload
-                else p_state = P_PAYLOAD;
-                break;
-                
-            case P_PAYLOAD:
-                p_payload[p_idx++] = rx;
-                if (p_idx >= p_len) p_state = P_CRC;
-                break;
-                
-            case P_CRC:
-                p_crc_recv = rx;
-                p_state = P_ETX;
-                break;
-                
-            case P_ETX:
-                if (rx == FCS_PROTO_ETX) {
-                    // 1. Verify CRC
-                    // CRC covers: CMD + SALT + LEN + PAYLOAD
-                    uint8_t header[3] = {p_cmd, p_salt, p_len};
-                    uint8_t cal_crc = Calc_CRC8(header, 3, 0);
-                    cal_crc = Calc_CRC8(p_payload, p_len, cal_crc);
-                    
-                    char tx_buf[128];
-                    
-                    if (cal_crc == p_crc_recv) {
-                        // 2. Decrypt Payload
-                        uint8_t session_key = FCS_PROTO_KEY ^ p_salt;
-                        for(int i=0; i<p_len; i++) {
-                            p_payload[i] ^= (uint8_t)(session_key + i);
-                        }
-                        p_payload[p_len] = 0; // Null Terminate
-                        
-                        // 3. Process Command
-                        char resp[64];
-                        if (p_cmd == FCS_CMD_TARGET_INPUT) {
-                             FCS_Process_Command(sys, (char*)p_payload, resp);
-                        } 
-                        else if (p_cmd == FCS_CMD_STATUS_REQ) {
-                             sprintf(resp, "STATUS:READY,Z%d", sys->user_pos.zone);
-                        }
-                        
-                        // 4. Send Response (Via the connected UART)
-                        sprintf(tx_buf, "\r\n[ACK] %s\r\n", resp);
-                        HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
-                        
-                    } else {
-                        // CRC Error Response
-                        sprintf(tx_buf, "\r\n[ERR] CRC Fail\r\n");
-                        HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
-                    }
-                }
-                p_state = P_IDLE;
-                break;
+    // Protocol State Machine
+    switch (p_state) {
+      case P_IDLE:
+        if (rx == FCS_PROTO_STX) {
+          p_state = P_CMD;
         }
+        break;
+                
+      case P_CMD:
+        p_cmd = rx;
+        p_state = P_SALT;
+        break;
+                
+      case P_SALT:
+        p_salt = rx;
+        p_state = P_LEN;
+        break;
+                
+      case P_LEN:
+        p_len = rx;
+        p_idx = 0;
+        if (p_len > 120) p_state = P_IDLE; // Safety Limit
+        else if (p_len == 0) p_state = P_CRC; // Empty Payload
+        else p_state = P_PAYLOAD;
+        break;
+                
+      case P_PAYLOAD:
+        p_payload[p_idx++] = rx;
+        if (p_idx >= p_len) p_state = P_CRC;
+        break;
+                
+      case P_CRC:
+        p_crc_recv = rx;
+        p_state = P_ETX;
+        break;
+                
+      case P_ETX:
+        if (rx == FCS_PROTO_ETX) {
+          // 1. Verify CRC
+          // CRC covers: CMD + SALT + LEN + PAYLOAD
+          uint8_t header[3] = {p_cmd, p_salt, p_len};
+          uint8_t cal_crc = Calc_CRC8(header, 3, 0);
+          cal_crc = Calc_CRC8(p_payload, p_len, cal_crc);
+                    
+          char tx_buf[128];
+                    
+          if (cal_crc == p_crc_recv) {
+            // 2. Decrypt Payload
+            uint8_t session_key = FCS_PROTO_KEY ^ p_salt;
+            for(int i=0; i<p_len; i++) {
+              p_payload[i] ^= (uint8_t)(session_key + i);
+            }
+            p_payload[p_len] = 0; // Null Terminate
+                        
+            // 3. Process Command
+            char resp[64];
+            if (p_cmd == FCS_CMD_TARGET_INPUT) {
+              FCS_Process_Command(sys, (char*)p_payload, resp);
+            } 
+            else if (p_cmd == FCS_CMD_STATUS_REQ) {
+              sprintf(resp, "STATUS:READY,Z%d", sys->user_pos.zone);
+            }
+                        
+            // 4. Send Response (Via the connected UART)
+            sprintf(tx_buf, "\r\n[ACK] %s\r\n", resp);
+            HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
+                        
+          } else {
+            // CRC Error Response
+            sprintf(tx_buf, "\r\n[ERR] CRC Fail\r\n");
+            HAL_UART_Transmit(huart, (uint8_t*)tx_buf, strlen(tx_buf), 100);
+          }
+        }
+        p_state = P_IDLE;
+        break;
+      }
     }
 }
 
@@ -199,45 +199,45 @@ int FCS_Process_Command(FCS_System_t *sys, char *cmd, char *resp) {
   // Check if it's legacy "TGT:" or raw params?
   // Since this is internal call now, we assume it gets the parameter string directly.
   
-    int z;
-    char b;
-    long e_int, n_int;
-    int a_int;
+  int z;
+  char b;
+  long e_int, n_int;
+  int a_int;
     
-    // Try Parsing: "52,S,333712,4132894,105"
-    int count = sscanf(cmd, "%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
+  // Try Parsing: "52,S,333712,4132894,105"
+  int count = sscanf(cmd, "%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
     
-    // If failed, maybe it still has "TGT:" prefix (Testing)?
-    if (count != 5) {
-         count = sscanf(cmd, "TGT:%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
-    }
+  // If failed, maybe it still has "TGT:" prefix (Testing)?
+  if (count != 5) {
+    count = sscanf(cmd, "TGT:%d,%c,%ld,%ld,%d", &z, &b, &e_int, &n_int, &a_int);
+  }
     
-    if (count == 5) {
-      double e = (double)e_int;
-      double n = (double)n_int;
-      float a = (float)a_int;
+  if (count == 5) {
+    double e = (double)e_int;
+    double n = (double)n_int;
+    float a = (float)a_int;
       
-      // Update System
-      FCS_Set_Target(sys, z, b, e, n, a);
+    // Update System
+    FCS_Set_Target(sys, z, b, e, n, a);
       
-      // Calculate Ballistics Immediately
-      FCS_Calculate_FireData(sys);
+    // Calculate Ballistics Immediately
+    FCS_Calculate_FireData(sys);
       
-      // Generate Response (Validation Output)
-      int az_i = (int)sys->fire.azimuth;
-      int az_d = (int)((sys->fire.azimuth - az_i) * 10); if(az_d<0) az_d = -az_d;
+    // Generate Response (Validation Output)
+    int az_i = (int)sys->fire.azimuth;
+    int az_d = (int)((sys->fire.azimuth - az_i) * 10); if(az_d<0) az_d = -az_d;
       
-      int el_i = (int)sys->fire.elevation;
-      int el_d = (int)((sys->fire.elevation - el_i) * 10); if(el_d<0) el_d = -el_d;
+    int el_i = (int)sys->fire.elevation;
+    int el_d = (int)((sys->fire.elevation - el_i) * 10); if(el_d<0) el_d = -el_d;
       
-      sprintf(resp, "AZ:%d.%d EL:%d.%d", az_i, az_d, el_i, el_d);
+    sprintf(resp, "AZ:%d.%d EL:%d.%d", az_i, az_d, el_i, el_d);
       
-      // Update UI State Context
-      sys->state = UI_FIRE_DATA; 
+    // Update UI State Context
+    sys->state = UI_FIRE_DATA; 
       
-      return 1; // Success
-    } else {
-      sprintf(resp, "ERR:Parse(%d)", count);
-      return -1;
-    }
+    return 1; // Success
+  } else {
+    sprintf(resp, "ERR:Parse(%d)", count);
+    return -1;
+  }
 }

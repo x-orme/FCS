@@ -238,8 +238,13 @@ int FCS_Process_Command(FCS_System_t *sys, char *cmd, char *resp) {
     // Update System
     FCS_Set_Target(sys, z, b, e, n, a);
       
-    // Calculate Ballistics Immediately
+    // Calculate Ballistics Immediately (with DWT profiling)
+    DWT->CYCCNT = 0;
     FCS_Calculate_FireData(sys);
+    uint32_t calc_cycles = DWT->CYCCNT;
+    uint32_t calc_us = calc_cycles / 84; // 84MHz -> 1us per 84 cycles
+    printf("[PERF] Ballistic calc: %lu cycles (%lu us)\r\n",
+           (unsigned long)calc_cycles, (unsigned long)calc_us);
       
     // Generate Response (Validation Output)
     int az_i = (int)sys->fire.azimuth;

@@ -173,6 +173,11 @@ int main(void)
   FCS_Serial_Start(&huart2); 
   FCS_Serial_Start(&huart1);
   
+  // DWT Cycle Counter Init (Performance Profiling)
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
   printf("\r\n[FCS] System Ready. Waiting for Commands...\r\n");
   
   /* USER CODE END 2 */

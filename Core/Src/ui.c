@@ -6,12 +6,24 @@
 #include <math.h> 
 
 // Helper Macros
-#define CLAMP(x, min, max) ((x) < (min) ? (min) : ((x) > (max) ? (max) : (x)))
+#define CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
+
+// UI Constants
+#define ADC_MAX           4096
+#define KEY_DEBOUNCE_MS   200
+#define BOOT_DELAY_MS     1000
+#define CHARGE_MAX        7
+#define ROUNDS_MIN        1
+#define ROUNDS_MAX        10
+#define MASK_MAX_MIL      800
+#define PT_MIN_C          (-40)
+#define PT_MAX_C          60
+#define ADJ_RANGE_STEP    100
+#define ADJ_AZ_STEP       10
 
 // [초기화]
 void UI_Init(FCS_System_t *sys) {
-  memset(sys, 0, sizeof(FCS_System_t));
-    
+  // memset removed: FCS_Init_System() handles full zeroing + prop_temp=21
   sys->state = UI_BOOT;
     
   // 기본값 설정 (Korea Default: Zone 52S)
@@ -34,7 +46,7 @@ void UI_Init(FCS_System_t *sys) {
   ssd1306_SetCursor(20, 20); // Center Aligned
   ssd1306_WriteString("SYSTEM INIT...", Font_7x10, White);
   ssd1306_UpdateScreen();
-  HAL_Delay(1000);
+  HAL_Delay(BOOT_DELAY_MS);
     
   // 바로 1단계 진입
   sys->state = UI_BP_SETTING;
@@ -49,24 +61,26 @@ void UI_Update(FCS_System_t *sys) {
 
   // 1. 노브 데이터 처리
   
-  // Knob 2: 장약 (1 ~ 7) - Global available? Usually set in Fire Data, but let's keep it global or restricted?
-  // Let's keep continuous update for now as it was.
-  sys->fire.charge = (uint8_t)((sys->input.knob_values[1] * 7) / 4096) + 1;
-  if(sys->fire.charge > 7) sys->fire.charge = 7;
-
-  // Knob 3: 발사탄수 (1 ~ 10)
-  sys->fire.rounds = (uint8_t)((sys->input.knob_values[2] * 10) / 4096) + 1;
-  if(sys->fire.rounds > 10) sys->fire.rounds = 10;
+  // Knob2: charge (1~7) - Global
+  sys->fire.charge = (uint8_t)((sys->input.knob_values[2] * CHARGE_MAX) / ADC_MAX) + 1;
+  if(sys->fire.charge > CHARGE_MAX) sys->fire.charge = CHARGE_MAX;
 
   // Knob 1: 차폐각 (Moved to WAITING state only)
   if (sys->state == UI_WAITING) {
     static uint32_t smooth_knob0 = 0;
     if (smooth_knob0 == 0) smooth_knob0 = sys->input.knob_values[0]; 
     smooth_knob0 = (smooth_knob0 * 3 + sys->input.knob_values[0]) / 4;
-      
-    uint16_t temp_angle = (uint16_t)(((smooth_knob0 * 81) / 4096) * 10);
-    if (temp_angle > 800) temp_angle = 800;
+
+    uint16_t temp_angle = (uint16_t)(((smooth_knob0 * 81) / ADC_MAX) * 10);
+    if (temp_angle > MASK_MAX_MIL) temp_angle = MASK_MAX_MIL;
     sys->mask_angle = temp_angle;
+
+    // Knob1: prop_temp (-40~60°C, 100 range) with EMA smoothing
+    static uint32_t smooth_knob1 = 0;
+    if (smooth_knob1 == 0) smooth_knob1 = sys->input.knob_values[1];
+    smooth_knob1 = (smooth_knob1 * 3 + sys->input.knob_values[1]) / 4;
+    int pt_raw = (int)((smooth_knob1 * 101) / ADC_MAX) + PT_MIN_C;
+    sys->env.prop_temp = (float)CLAMP(pt_raw, PT_MIN_C, PT_MAX_C);
   }
 
   // [Real-time Recalculation]
@@ -78,7 +92,7 @@ void UI_Update(FCS_System_t *sys) {
   static uint32_t last_act_time = 0;
   
   if (key != KEY_NONE && key != last_key) {
-    if (HAL_GetTick() - last_act_time > 200) {
+    if (HAL_GetTick() - last_act_time > KEY_DEBOUNCE_MS) {
       last_act_time = HAL_GetTick(); 
 
       // Helper for Digit Modifiers
@@ -178,19 +192,25 @@ void UI_Update(FCS_System_t *sys) {
         break;
 
       case UI_FIRE_DATA:
-        if (key == KEY_LEFT) sys->state = UI_WAITING;
+        if (key == KEY_UP) {
+          if (sys->fire.rounds < ROUNDS_MAX) sys->fire.rounds++;
+        }
+        else if (key == KEY_DOWN) {
+          if (sys->fire.rounds > ROUNDS_MIN) sys->fire.rounds--;
+        }
+        else if (key == KEY_LEFT) sys->state = UI_WAITING;
         else if (key == KEY_ENTER) sys->state = UI_ADJUSTMENT;
         break;
             
       case UI_ADJUSTMENT:
         // [상하] 사거리 수정 (+/- 100m)
-        if (key == KEY_UP) sys->adj.range_m += 100;
-        else if (key == KEY_DOWN) sys->adj.range_m -= 100;
-             
+        if (key == KEY_UP) sys->adj.range_m += ADJ_RANGE_STEP;
+        else if (key == KEY_DOWN) sys->adj.range_m -= ADJ_RANGE_STEP;
+
         // [좌우] 편각 수정 (L/R +/- 10mil)
         // Note: Usually Right is +, Left is - (Standard Correction)
-        if (key == KEY_RIGHT) sys->adj.az_mil += 10;
-        else if (key == KEY_LEFT) sys->adj.az_mil -= 10;
+        if (key == KEY_RIGHT) sys->adj.az_mil += ADJ_AZ_STEP;
+        else if (key == KEY_LEFT) sys->adj.az_mil -= ADJ_AZ_STEP;
             
         // 확인(Enter) 누르면 재계산 후 사격 제원(Fire Order) 복귀
         if (key == KEY_ENTER) {
@@ -225,16 +245,16 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_WriteString("[BATTERY POS]", Font_6x8, White);
 
             // Data
-            sprintf(buf, "%d%c E:%06lu", sys->user_pos.zone, sys->user_pos.band, (uint32_t)sys->user_pos.easting);
+            snprintf(buf, sizeof(buf), "%d%c E:%06lu", sys->user_pos.zone, sys->user_pos.band, (uint32_t)sys->user_pos.easting);
             ssd1306_SetCursor(0, 16);
             ssd1306_WriteString(buf, Font_7x10, White);
 
-            sprintf(buf, "    N:0%07lu", (uint32_t)sys->user_pos.northing);
+            snprintf(buf, sizeof(buf), "    N:0%07lu", (uint32_t)sys->user_pos.northing);
             ssd1306_SetCursor(0, 28);
             ssd1306_WriteString(buf, Font_7x10, White);
-            
+
             // Data (Line 3: A) Y=40 - Aligned with Colon
-            sprintf(buf, "    A:%04d m", (int)sys->user_pos.altitude);
+            snprintf(buf, sizeof(buf), "    A:%04d m", (int)sys->user_pos.altitude);
             ssd1306_SetCursor(0, 40); 
             ssd1306_WriteString(buf, Font_7x10, White);
 
@@ -257,17 +277,20 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_WriteString("[STANDBY]", Font_6x8, White);
             
             // Env Data
-            sprintf(buf, "T:%d.%d  P:%d", 
-                (int)sys->env.air_temp, (int)(sys->env.air_temp * 10)%10, 
+            snprintf(buf, sizeof(buf), "T:%d.%d  P:%d",
+                (int)sys->env.air_temp, (int)(sys->env.air_temp * 10)%10,
                 (int)sys->env.air_pressure);
-            ssd1306_SetCursor(10, 20);
+            ssd1306_SetCursor(10, 14);
             ssd1306_WriteString(buf, Font_7x10, White);
-            
-            // Mask Data (Centered)
-            sprintf(buf, "Mask: %03u mil", sys->mask_angle);
-            // Center alignment: 128px width. Text is approx 13 chars * 7 = 91px.
-            // (128-91)/2 = 18.5 -> x=18
-            ssd1306_SetCursor(18, 40); // Moved to Y=40 for better balance
+
+            // Propellant Temperature
+            snprintf(buf, sizeof(buf), "PT:%3d C", (int)sys->env.prop_temp);
+            ssd1306_SetCursor(32, 28);
+            ssd1306_WriteString(buf, Font_7x10, White);
+
+            // Mask Data
+            snprintf(buf, sizeof(buf), "Mask: %03u mil", sys->mask_angle);
+            ssd1306_SetCursor(18, 42);
             ssd1306_WriteString(buf, Font_7x10, White);
             break;
 
@@ -276,16 +299,16 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_WriteString("[MSN CHECK]", Font_6x8, White);
             
             // Target Data (Unified Layout with BP_SETTING)
-            sprintf(buf, "%d%c E:%06lu", sys->tgt_pos.zone, sys->tgt_pos.band, (uint32_t)sys->tgt_pos.easting);
+            snprintf(buf, sizeof(buf), "%d%c E:%06lu", sys->tgt_pos.zone, sys->tgt_pos.band, (uint32_t)sys->tgt_pos.easting);
             ssd1306_SetCursor(0, 16);
             ssd1306_WriteString(buf, Font_7x10, White);
 
-            sprintf(buf, "    N:0%07lu", (uint32_t)sys->tgt_pos.northing);
+            snprintf(buf, sizeof(buf), "    N:0%07lu", (uint32_t)sys->tgt_pos.northing);
             ssd1306_SetCursor(0, 28);
             ssd1306_WriteString(buf, Font_7x10, White);
-            
+
             // Altitude Input (Unified)
-            sprintf(buf, "    A:%04d m", (int)sys->tgt_pos.altitude);
+            snprintf(buf, sizeof(buf), "    A:%04d m", (int)sys->tgt_pos.altitude);
             ssd1306_SetCursor(0, 40); 
             ssd1306_WriteString(buf, Font_7x10, White);
 
@@ -307,30 +330,30 @@ void UI_Draw(FCS_System_t *sys) {
             ssd1306_SetCursor(28, 0);
             ssd1306_WriteString("[FIRE ORDER]", Font_6x8, White);
             
-            sprintf(buf, "CH:%d  AM:HE", sys->fire.charge);
+            snprintf(buf, sizeof(buf), "CH:%d  AM:HE", sys->fire.charge);
             ssd1306_SetCursor(20, 16);
             ssd1306_WriteString(buf, Font_7x10, White);
-            
-            sprintf(buf, "FU:Q6 RD:%d", sys->fire.rounds);
+
+            snprintf(buf, sizeof(buf), "FU:Q6 RD:%d", sys->fire.rounds);
             ssd1306_SetCursor(20, 28);
             ssd1306_WriteString(buf, Font_7x10, White);
             
             ssd1306_Line(10, 42, 118, 42, White);
             
-            if (sys->fire.elevation < -0.5f) {
+            if (sys->fire.error != FCS_FIRE_OK) {
                 // Error Handling
                 ssd1306_SetCursor(18, 48);
-                if (sys->fire.elevation > -1.5f) { // -1.0 (RANGE)
+                if (sys->fire.error == FCS_FIRE_ERR_RANGE) {
                     ssd1306_WriteString("! RANGE ERR !", Font_7x10, White);
-                } else { // -2.0 (CHARGE)
-                    ssd1306_WriteString("! CHG ERROR !", Font_7x10, White); 
+                } else {
+                    ssd1306_WriteString("! CHG ERROR !", Font_7x10, White);
                 }
             }
             else if (sys->fire.elevation < sys->mask_angle) {
                 ssd1306_SetCursor(22, 48);
                 ssd1306_WriteString("!MASK ERROR!", Font_7x10, White); 
             } else {
-                sprintf(buf, "AZ:%04d QE:%03d", (int)sys->fire.azimuth, (int)sys->fire.elevation);
+                snprintf(buf, sizeof(buf), "AZ:%04d QE:%03d", (int)sys->fire.azimuth, (int)sys->fire.elevation);
                 ssd1306_SetCursor(15, 48);
                 ssd1306_WriteString(buf, Font_7x10, White);
             }
@@ -348,7 +371,7 @@ void UI_Draw(FCS_System_t *sys) {
             else if (abs_mil > 0) { dir_c = 'R'; }
             
             // "DEV : " (6 chars) + "C" (1) + "  " (2) + "XXX" (3)
-            sprintf(buf, "DEV : %c  %3d", dir_c, abs_mil);
+            snprintf(buf, sizeof(buf), "DEV : %c  %3d", dir_c, abs_mil);
             ssd1306_SetCursor(10, 20);
             ssd1306_WriteString(buf, Font_7x10, White);
 
@@ -361,7 +384,7 @@ void UI_Draw(FCS_System_t *sys) {
             if (sys->adj.range_m == 0) sign_c = ' ';
 
             // "RNG : " (6 chars) + "S" (1) + " " (1) + "XXXX" (4)
-            sprintf(buf, "RNG : %c %4d", sign_c, abs_rng);
+            snprintf(buf, sizeof(buf), "RNG : %c %4d", sign_c, abs_rng);
             ssd1306_SetCursor(10, 35);
             ssd1306_WriteString(buf, Font_7x10, White);
 

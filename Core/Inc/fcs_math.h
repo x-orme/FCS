@@ -15,7 +15,6 @@
 #define DEG_TO_RAD      (PI / 180.0)
 
 // Function Prototypes
-void FCS_Math_Init(void);
 void FCS_Calculate_FireData(FCS_System_t *sys);
 void FCS_UTM_To_LatLon(UTM_Coord_t *utm, double *lat, double *lon);
 void FCS_LatLon_To_UTM(double lat, double lon, uint8_t force_zone, UTM_Coord_t *utm);

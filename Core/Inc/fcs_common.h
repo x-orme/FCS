@@ -22,6 +22,14 @@ typedef enum {
   KEY_ENTER   // ADC 2900~3000
 } KeyState;
 
+// Fire Error Codes
+typedef enum {
+  FCS_FIRE_OK = 0,
+  FCS_FIRE_ERR_RANGE,   // Exceeds weapon max range
+  FCS_FIRE_ERR_CHARGE,  // Exceeds current charge limit
+  FCS_FIRE_ERR_CALC     // Calculation failure (table lookup, etc.)
+} FCS_FireError_t;
+
 // 2. 공용 구조체 (Struct)
 typedef struct {
   int zone;
@@ -39,6 +47,7 @@ typedef struct {
   float distance_km;  // 사거리 (km)
   float time_of_flight; // 비행시간 (초)
   int rounds;         // 발사 탄수
+  FCS_FireError_t error; // Calculation error status
 
   // [Validation Data] (Intermediate Values)
   float map_azimuth;  // 도상 방위각 (mil)

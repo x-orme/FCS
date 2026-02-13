@@ -18,6 +18,11 @@ void FCS_Task_Serial(FCS_System_t *sys, UART_HandleTypeDef *huart);
 // [New] ISR Interface
 void FCS_UART_RxCallback(UART_HandleTypeDef *huart);
 void FCS_Serial_Start(UART_HandleTypeDef *huart);
+uint32_t FCS_Serial_GetOverflowCount(void);
+
+// [Buffer Size Constants]
+#define FCS_RESP_BUF_SIZE  64
+#define FCS_TX_BUF_SIZE    128
 
 // [Protocol Definitions]
 #define FCS_PROTO_STX  0x02

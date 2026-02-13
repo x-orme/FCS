@@ -2,6 +2,16 @@
 #include <math.h>
 #include <string.h>
 
+// Ballistic Constants
+#define STD_AIR_TEMP_C        15.0f
+#define STD_PROP_TEMP_C       21.0f
+#define STD_PRESSURE_HPA      1013.25f
+#define MIL_PER_CIRCLE        6400.0f
+#define APPROX_VELOCITY_MS    300.0
+#define CORIOLIS_RANGE_FACTOR 0.5
+#define CORIOLIS_AZ_FACTOR    0.1
+#define MIN_RANGE_M           100.0f
+
 // [1] Internal Math Helpers
 static double deg2rad(double deg) { return deg * DEG_TO_RAD; }
 static double rad2deg(double rad) { return rad * RAD_TO_DEG; }
@@ -11,9 +21,7 @@ static double rad2deg(double rad) { return rad * RAD_TO_DEG; }
 // Weapon: K105A1 (105mm), M1 HE Projectile
 // Charges: 1 to 7 (Tables approximated based on standard 105mm ballistics)
 // =========================================================================================
-// Error Codes for Elevation
-#define FCS_ERR_RANGE   -1.0f // Exceeds Weapon Max Range
-#define FCS_ERR_CHARGE  -2.0f // Exceeds Current Charge Limit
+// (Error codes moved to FCS_FireError_t enum in fcs_common.h)
 
 typedef struct {
     float range_m;
@@ -90,6 +98,37 @@ static const FiringTable_Row_t* FT_DB[8] = {
 static const int FT_Sizes[8] = {
   0, SZ_Ch1, SZ_Ch2, SZ_Ch3, SZ_Ch4, SZ_Ch5, SZ_Ch6, SZ_Ch7
 };
+
+// Wind Correction (extension point for wind sensor integration)
+// Decomposes wind into range (head/tail) and azimuth (crosswind) components.
+// wind_speed: m/s, wind_dir: wind FROM direction in mil
+// fire_az: firing azimuth in mil
+// corr_range: output range correction (m), corr_az: output azimuth correction (mil)
+static void apply_wind_correction(float wind_speed, float wind_dir,
+                                  float fire_az, float map_dist_m,
+                                  float *corr_range, float *corr_az) {
+  *corr_range = 0.0f;
+  *corr_az = 0.0f;
+  if (wind_speed < 0.1f) return;
+
+  // Relative wind angle (wind FROM vs firing TO)
+  float rel_angle = wind_dir - fire_az + (MIL_PER_CIRCLE / 2.0f); // +3200 = 180deg (headwind)
+  // Normalize to 0~6400 mil
+  while (rel_angle < 0.0f) rel_angle += MIL_PER_CIRCLE;
+  while (rel_angle >= MIL_PER_CIRCLE) rel_angle -= MIL_PER_CIRCLE;
+
+  float rel_rad = rel_angle * (3.14159265f / (MIL_PER_CIRCLE / 2.0f));
+  float headwind = wind_speed * cosf(rel_rad);  // +: headwind, -: tailwind
+  float crosswind = wind_speed * sinf(rel_rad); // +: right, -: left
+
+  // Range: headwind -> shell falls short -> +correction
+  // Approx: 1 m/s headwind -> +0.3% range correction per km
+  *corr_range = headwind * 0.003f * map_dist_m;
+
+  // Azimuth: crosswind -> deflection
+  // Approx: 1 m/s crosswind -> 0.5 mil / km
+  *corr_az = -crosswind * 0.5f * (map_dist_m / 1000.0f);
+}
 
 // Linear Interpolation
 static float L_Interp(float x1, float y1, float x2, float y2, float x) {
@@ -189,6 +228,8 @@ void FCS_LatLon_To_UTM(double lat, double lon, uint8_t force_zone, UTM_Coord_t *
 // =========================================================================================
 
 void FCS_Calculate_FireData(FCS_System_t *sys) {
+  sys->fire.error = FCS_FIRE_OK;
+
   UTM_Coord_t *batt = &sys->user_pos;
   UTM_Coord_t *tgt  = &sys->tgt_pos;
     
@@ -212,7 +253,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
   double map_az_deg = rad2deg(az_rad);
   if (map_az_deg < 0) map_az_deg += 360.0;
     
-  float map_az_mil = (float)(map_az_deg * (6400.0 / 360.0));
+  float map_az_mil = (float)(map_az_deg * (MIL_PER_CIRCLE / 360.0));
   float vi_m = tgt->altitude - batt->altitude; // Vertical Interval (+: Up, -: Down)
 
   // --- Step 2: Corrections (Met + Velocity + Rotation) ---
@@ -228,27 +269,35 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
   // If shell flies better (+eff), we look up a SHORTER range entry to hit the actual target.
   // So: High Temp -> Range Efficiency > 100% -> Corrected Range < Map Range.
     
-  float temp_diff = sys->env.air_temp - 15.0f;
+  float temp_diff = sys->env.air_temp - STD_AIR_TEMP_C;
   // Approx: +10C -> +1% Range specific effect -> -1% Correction
   corr_dist_m -= (map_dist_m * 0.01f * (temp_diff / 10.0f));
     
   // B. Propellant Temp Correction
-  float prop_diff = sys->env.prop_temp - 21.0f;
+  float prop_diff = sys->env.prop_temp - STD_PROP_TEMP_C;
   // Approx: +10C -> +2% Range -> -2% Correction
   corr_dist_m -= (map_dist_m * 0.02f * (prop_diff / 10.0f));
 
-  // C. Wind Correction (Head/Tail) 
-  // Data from BMP280 does NOT include wind. 
-  // Assuming 0 wind speed unless manually input (TODO for future update)
-  // float wind_eff = 0.0f; 
-    
-  // (Simplification: Just applying to Corrected Range var)
+  // C. Air Pressure Correction (Density Factor)
+  // High pressure -> higher density -> more drag -> shell falls short -> need + correction
+  float press_diff = sys->env.air_pressure - STD_PRESSURE_HPA;
+  // Approx: +10hPa -> +1% density -> -0.5% range -> +0.5% correction
+  corr_dist_m += (float)(map_dist_m * 0.0005f * (press_diff / 10.0f));
+
+  // D. Wind Correction (Head/Tail → range, Crosswind → azimuth)
+  float wind_corr_range = 0.0f;
+  float wind_corr_az = 0.0f;
+  apply_wind_correction(sys->env.wind_speed, sys->env.wind_dir,
+                        map_az_mil, (float)map_dist_m,
+                        &wind_corr_range, &wind_corr_az);
+  corr_dist_m += wind_corr_range;
+
   // [Adjustment Applied Here]
   // Add user adjustment (range_m) to the calculated Map Range
   float final_lookup_range = map_dist_m + corr_dist_m + (float)sys->adj.range_m;
     
   // Clamp Range
-  if (final_lookup_range < 0) final_lookup_range = 100.0f;
+  if (final_lookup_range < 0) final_lookup_range = MIN_RANGE_M;
 
   // --- Coriolis Effect Correction (Earth Rotation) ---
   // Depends on Latitude, Azimuth, and Time of Flight (TOF)
@@ -259,7 +308,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
     
   // 2. Approx Time of Flight (tof)
   // Heuristic: TOF ~ Range / Avg_Velocity (Assume ~300m/s for indirect fire arc)
-  double tof = map_dist_m / 300.0; 
+  double tof = map_dist_m / APPROX_VELOCITY_MS;
     
   // 3. Earth Rotation Rate (Omega) - Unused directly in simplified formula
   // double omega = 0.00007292; // rad/s
@@ -279,7 +328,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
   // Actually, Earth rotates East. Target (East) moves away. Shell (Incr Inertia) moves East too.
   // Let's use standard table approximation: 
   // Factor ~ 0.5 m / km / sec_tof * sin(Lat) * sin(Az)
-  double cor_range = 0.5 * (map_dist_m/1000.0) * tof * sin(lat_rad) * sin(az_rad);
+  double cor_range = CORIOLIS_RANGE_FACTOR * (map_dist_m/1000.0) * tof * sin(lat_rad) * sin(az_rad);
   // Apply to Corrected Range (Inverse sign: if current falls short, we look up shorter range? No, we need more range)
   // Here we just add to the geometric range for lookup.
   final_lookup_range += cor_range;
@@ -287,7 +336,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
   // (B) Azimuth Correction (Coriolis Drift)
   // N.Hemisphere: Deflects Simple Right (Clockwise)
   // Factor: ~ 0.1 mil * TOF * sin(Lat)
-  double cor_az_mil = 0.1 * tof * sin(lat_rad);
+  double cor_az_mil = CORIOLIS_AZ_FACTOR * tof * sin(lat_rad);
   // Add to map azimuth (Right deflection means we need to aim Left? No, Deflection is added to Azimuth to hit)
   // If shell drifts Right, we must aim Left. So Azimuth -= Correction.
   // Wait, "Drift" in step 5 is added. Drift is usually Right (Spin). We correct by aiming Left? 
@@ -313,11 +362,21 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
 
   const FiringTable_Row_t *current_ft = FT_DB[chg_idx];
   int current_size = FT_Sizes[chg_idx];
-    
+
+  // [Guard] Table pointer and size validation
+  if (current_ft == NULL || current_size < 2) {
+    sys->fire.error = FCS_FIRE_ERR_CALC;
+    return;
+  }
+  if (FT_DB[7] == NULL || FT_Sizes[7] < 1) {
+    sys->fire.error = FCS_FIRE_ERR_CALC;
+    return;
+  }
+
   // [Error Check 1] Absolute Max Range Check (Weapon Limit)
   float abs_max_range = FT_DB[7][FT_Sizes[7]-1].range_m;
   if (final_lookup_range > abs_max_range) {
-    sys->fire.elevation = FCS_ERR_RANGE;
+    sys->fire.error = FCS_FIRE_ERR_RANGE;
     return;
   }
 
@@ -326,7 +385,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
   float chg_max = current_ft[current_size-1].range_m;
     
   if (final_lookup_range < chg_min || final_lookup_range > chg_max) {
-    sys->fire.elevation = FCS_ERR_CHARGE;
+    sys->fire.error = FCS_FIRE_ERR_CHARGE;
     return;
   }
 
@@ -353,7 +412,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
     c_factor  = L_Interp(r1, current_ft[idx].c_factor, r2, current_ft[idx+1].c_factor, final_lookup_range);
   } else {
     // Should be covered by error checks, but fallback safety
-    sys->fire.elevation = FCS_ERR_CHARGE;
+    sys->fire.error = FCS_FIRE_ERR_CALC;
     return;
   }
 
@@ -375,7 +434,7 @@ void FCS_Calculate_FireData(FCS_System_t *sys) {
     
   float correction_mil = (float)sys->adj.az_mil / gt_factor;
 
-  sys->fire.azimuth = map_az_mil + drift + cor_az_correction + correction_mil; 
+  sys->fire.azimuth = map_az_mil + drift + cor_az_correction + correction_mil + wind_corr_az;
     
   // [Validation Data] Save Intermediate Values
   sys->fire.map_azimuth = map_az_mil;

@@ -2,6 +2,14 @@
 #define __FCS_COMMON_H
 
 #include <stdint.h>
+#include <stdio.h>
+
+// Debug Print (stripped in Release builds)
+#ifdef DEBUG
+  #define DBG_PRINT(...) printf(__VA_ARGS__)
+#else
+  #define DBG_PRINT(...) ((void)0)
+#endif
 
 // 1. 공용 열거형 (Enum)
 typedef enum {

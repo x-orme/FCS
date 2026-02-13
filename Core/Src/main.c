@@ -178,7 +178,7 @@ int main(void)
   DWT->CYCCNT = 0;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-  printf("\r\n[FCS] System Ready. Waiting for Commands...\r\n");
+  DBG_PRINT("\r\n[FCS] System Ready. Waiting for Commands...\r\n");
   
   /* USER CODE END 2 */
 

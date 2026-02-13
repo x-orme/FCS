@@ -27,7 +27,7 @@ void Flash_Load_BatteryPos(FCS_System_t *sys) {
 
   // Check Magic
   if (data->magic != FLASH_MAGIC_CODE) {
-    printf("[FLASH] No valid data (magic mismatch). Defaults set.\r\n");
+    DBG_PRINT("[FLASH] No valid data (magic mismatch). Defaults set.\r\n");
     sys->user_pos.zone = 52;
     sys->user_pos.band = 'S';
     sys->user_pos.easting = 0.0;
@@ -39,7 +39,7 @@ void Flash_Load_BatteryPos(FCS_System_t *sys) {
   // Verify CRC32
   uint32_t cal_crc = Calc_CRC32((const uint8_t*)data + CRC_DATA_OFFSET, CRC_DATA_SIZE);
   if (cal_crc != data->crc32) {
-    printf("[FLASH] CRC32 mismatch (stored=0x%08lX calc=0x%08lX). Defaults set.\r\n",
+    DBG_PRINT("[FLASH] CRC32 mismatch (stored=0x%08lX calc=0x%08lX). Defaults set.\r\n",
            (unsigned long)data->crc32, (unsigned long)cal_crc);
     sys->user_pos.zone = 52;
     sys->user_pos.band = 'S';
@@ -55,7 +55,7 @@ void Flash_Load_BatteryPos(FCS_System_t *sys) {
   sys->user_pos.easting = data->easting;
   sys->user_pos.northing = data->northing;
   sys->user_pos.altitude = data->altitude;
-  printf("[FLASH] Data loaded (CRC OK).\r\n");
+  DBG_PRINT("[FLASH] Data loaded (CRC OK).\r\n");
 }
 
 // [2] Save Data to Flash
@@ -88,7 +88,7 @@ void Flash_Save_BatteryPos(FCS_System_t *sys) {
   EraseInitStruct.NbSectors = 1;
 
   if (HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError) != HAL_OK) {
-    printf("[FLASH] Erase Error (Code: %lu)\r\n", (unsigned long)SectorError);
+    DBG_PRINT("[FLASH] Erase Error (Code: %lu)\r\n", (unsigned long)SectorError);
     HAL_FLASH_Lock();
     return;
   }
@@ -99,11 +99,11 @@ void Flash_Save_BatteryPos(FCS_System_t *sys) {
 
   for (int i = 0; i < (int)sizeof(Flash_SaveData_t); i++) {
     if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, addr + i, ptr[i]) != HAL_OK) {
-      printf("[FLASH] Write Error at offset %d\r\n", i);
+      DBG_PRINT("[FLASH] Write Error at offset %d\r\n", i);
       break;
     }
   }
 
   HAL_FLASH_Lock();
-  printf("[FLASH] Save complete (CRC=0x%08lX).\r\n", (unsigned long)data.crc32);
+  DBG_PRINT("[FLASH] Save complete (CRC=0x%08lX).\r\n", (unsigned long)data.crc32);
 }

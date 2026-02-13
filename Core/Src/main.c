@@ -184,19 +184,23 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint32_t tick_start = HAL_GetTick();
+
     // [1] State Updates (Business Logic)
     FCS_Update_Input(&fcs, &hadc1);
     FCS_Update_Sensors(&fcs);
-    
+
     // [2] UI Logic
     UI_Update(&fcs);
     UI_Draw(&fcs);
 
     // [3] Background Tasks
     FCS_Task_Serial(&fcs, &huart1); // Respond to BT
-    
-    // [4] Control Loop Rate
-    HAL_Delay(20); 
+
+    // [4] Control Loop Rate (~50Hz, WFI saves power during idle)
+    while (HAL_GetTick() - tick_start < 20) {
+      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    }
   }
   /* USER CODE END 3 */
 }
